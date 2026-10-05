@@ -1,0 +1,17 @@
+[project]
+name = "fairforget-unlearning"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Ruzhylo Pavlo", email = "ruzhylo.pn@ucu.edu.ua" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+fairforget-unlearning = "fairforget_unlearning:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
