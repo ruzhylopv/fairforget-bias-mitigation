@@ -1,0 +1,5 @@
+# Shared defaults for experiments. Keep method-specific settings explicit and version-controlled.
+seed: 42
+device: cuda
+
+# Add dataset, model, forgetting, fairness, and evaluation settings as the experiment pipeline is built.
