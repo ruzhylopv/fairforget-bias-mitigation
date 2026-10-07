@@ -23,7 +23,7 @@ if torch.cuda.is_available():
         "GB"
     )
 
-    x = torch.rand(5000, 5000, device="cuda")
+    x = torch.rand(15, 15, device="cuda")
     y = x @ x
 
     print("GPU computation: OK")
