@@ -1,7 +1,10 @@
 #!/bin/bash
 
+#SBATCH --account=e-dev-2026d09-075
+#SBATCH --partition=booster
 #SBATCH --nodes=1
 #SBATCH --time=00:05:00
+#SBATCH --gres=gpu:1
 
 module load PyTorch/2.9.1
 
