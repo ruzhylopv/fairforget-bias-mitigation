@@ -4,10 +4,15 @@ version = "0.1.0"
 description = "Experiments in machine unlearning and fairness"
 readme = "README.md"
 authors = [
-    { name = "Ruzhylo Pavlo", email = "ruzhylo.pn@ucu.edu.ua" }
+    { name = "Ruzhylo Pavlo", email = "ruzhylo.pn@ucu.edu.ua" },
+    { name = "Taras Kopach", email = "kopach.pn@ucu.edu.ua" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "ipykernel>=7.4.0",
+    "jupyterlab>=4.6.4",
+    "pip>=26.2.1",
+]
 
 [dependency-groups]
 dev = [
@@ -28,3 +33,6 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+package = false
