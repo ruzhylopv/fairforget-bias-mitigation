@@ -1,6 +1,6 @@
 import pytest
 
-from rmu import utils
+from rmu import data
 
 
 @pytest.fixture
@@ -22,13 +22,13 @@ def stereo_data(monkeypatch):
             "sentences": [{"id": "other-bias", "gold_label": "stereotype"}],
         }
     )
-    monkeypatch.setattr(utils, "get_json_dict", lambda path: {"data": {"intrasentence": entries}})
-    monkeypatch.setattr(utils.random, "shuffle", lambda items: None)
+    monkeypatch.setattr(data, "get_json_dict", lambda path: {"data": {"intrasentence": entries}})
+    monkeypatch.setattr(data.random, "shuffle", lambda items: None)
     return entries
 
 
 def test_returns_filtered_forget_and_retain_batches(stereo_data):
-    forget_batches, retain_batches = utils.get_stereoset_data(paths=["fixture.json"], batch_size=3)
+    forget_batches, retain_batches = data.get_stereoset_data(paths=["fixture.json"], batch_size=3)
 
     assert [[sentence["id"] for sentence in batch] for batch in forget_batches] == [
         ["0-stereo", "1-stereo"]
@@ -39,7 +39,7 @@ def test_returns_filtered_forget_and_retain_batches(stereo_data):
 
 
 def test_batches_are_limited_to_batch_size_and_keep_remainder(stereo_data):
-    forget_batches, retain_batches = utils.get_stereoset_data(
+    forget_batches, retain_batches = data.get_stereoset_data(
         paths=["fixture.json"], batch_size=1
     )
 
@@ -48,7 +48,7 @@ def test_batches_are_limited_to_batch_size_and_keep_remainder(stereo_data):
 
 
 def test_unsplit_mode_uses_same_group_for_both_sets(stereo_data):
-    forget_batches, retain_batches = utils.get_stereoset_data(
+    forget_batches, retain_batches = data.get_stereoset_data(
         paths=["fixture.json"], batch_size=4, split=False
     )
 
@@ -65,4 +65,4 @@ def test_unsplit_mode_uses_same_group_for_both_sets(stereo_data):
 @pytest.mark.parametrize("batch_size", [0, -1, 1.5, True])
 def test_rejects_invalid_batch_size(batch_size):
     with pytest.raises(ValueError, match="batch_size must be a positive integer"):
-        utils.get_stereoset_data(paths=[], batch_size=batch_size)
+        data.get_stereoset_data(paths=[], batch_size=batch_size)
