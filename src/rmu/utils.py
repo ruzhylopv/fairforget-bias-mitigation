@@ -1,82 +1,69 @@
+"""Copied from https://github.com/centerforaisafety/wmdp."""
+
 import json
+import os
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import random
-random.seed(42)
-STEREO_PATHS = ["data/stereoset/raw/test.json", "data/stereoset/raw/dev.json"] 
+random.seed(0)
 
-def get_json_dict(path) -> dict:
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+################################
+##### Activation functions #####
+################################
 
-def get_stereoset_data(
-    cat_type: str = "intrasentence",
-    paths=STEREO_PATHS,
-    batch_size: int = 4,
-    split: bool = True,
-):
-    """Load StereoSet gender examples and return them in batches.
+def forward_with_cache(model, inputs, module, no_grad=True):
+    # define a tensor with the size of our cached activations
+    cache = []
+    def hook(module, input, output):
+        if isinstance(output, tuple):
+            cache.append(output[0])
+        else:
+            cache.append(output)
+        return None 
+    
+    hook_handle = module.register_forward_hook(hook)
+    
+    if no_grad:
+        with torch.no_grad():
+            _ = model(**inputs)
+    else:
+        _ = model(**inputs)
+        
+    hook_handle.remove()
 
-    Items are shuffled before they are divided into two groups. The forget
-    batches contain stereotype sentences from the first group; the retain
-    batches contain anti-stereotype sentences from the second group. When
-    ``split`` is false, both sentence sets are taken from the second group.
+    return cache[0]
+    
+#######################################
+##### Model and data loading code #####
+#######################################
 
-    Args:
-        cat_type: StereoSet category to load (for example, ``intrasentence``).
-        paths: JSON files whose ``data[cat_type]`` entries should be combined.
-        batch_size: Maximum number of sentences in each returned batch. The
-            final batch may contain fewer sentences.
-        split: Whether to use separate groups for forgetting and retaining.
 
-    Returns:
-        A pair ``(forget_batches, retain_batches)``. Each value is a list of
-        sentence batches, and each batch is a list of sentence dictionaries.
+def get_params(model, layer_ids, param_ids):
+    params = []
+    for layer_id in layer_ids:
+        for i, p in enumerate(model.model.layers[layer_id].parameters()):
+            if i in param_ids:
+                params.append(p)
+    return params
 
-    Raises:
-        ValueError: If ``batch_size`` is not a positive integer.
-    """
-    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size <= 0:
-        raise ValueError("batch_size must be a positive integer")
 
-    full_stereo_list = []
-    for path in paths:
-        full_stereo_list.extend(get_json_dict(path)["data"][cat_type])
+def load_model(model_name_or_path):
+    torch_dtype = "auto" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
 
-    gender_list = list(filter(lambda x: x["bias_type"] == "gender", full_stereo_list))
-    random.shuffle(gender_list)
-    n = len(gender_list)
-    forget_list, retain_list = gender_list[:n//2], gender_list[n//2:]
-    if not split:
-        forget_list = retain_list
-    forget_data = []
-    retain_data = []
-    for fitem in forget_list:
-        for sentence in fitem["sentences"]:
-            if sentence["gold_label"] != "stereotype":
-                continue
-            forget_data.append(sentence) 
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path,
+        torch_dtype=torch_dtype,
+        trust_remote_code=True,
+        device_map="auto",
+    )
 
-    for fitem in retain_list:
-        for sentence in fitem["sentences"]:
-            if sentence["gold_label"] != "anti-stereotype":
-                continue
-            retain_data.append(sentence)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path, trust_remote_code=True, use_fast=False
+    )
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.padding_side = "left"
+    tokenizer.mask_token_id = tokenizer.eos_token_id
+    tokenizer.sep_token_id = tokenizer.eos_token_id
+    tokenizer.cls_token_id = tokenizer.eos_token_id
 
-    def batchify(data):
-        return [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
-
-    return batchify(forget_data), batchify(retain_data)
-
-if __name__ == "__main__":
-    forget_batches, retain_batches = get_stereoset_data()
-
-    forget_count = sum(len(batch) for batch in forget_batches)
-    retain_count = sum(len(batch) for batch in retain_batches)
-    print(f"Forget: {forget_count} sentences in {len(forget_batches)} batches")
-    print(f"Retain: {retain_count} sentences in {len(retain_batches)} batches")
-
-    if forget_batches:
-        print("First forget example:")
-        print(forget_batches[0][0])
-    if retain_batches:
-        print("First retain example:")
-        print(retain_batches[0][0])
+    return model, tokenizer
