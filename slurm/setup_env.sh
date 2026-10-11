@@ -14,7 +14,8 @@ if [[ ! -d $ENV_DIR ]]; then
     echo "Creating env at $ENV_DIR"
     python3 -m venv --system-site-packages "$ENV_DIR"
 fi
-source "$ENV_DIR/bin/activate"
+# Re-source to activate the env and put it first on PYTHONPATH.
+source "$REPO_DIR/slurm/env.sh"
 
 echo "Installing $REPO_DIR (editable) and its dependencies"
 pip install --quiet -e "$REPO_DIR"
@@ -45,6 +46,10 @@ mkdir -p "$TEAM_SCRATCH/runs" "$TEAM_SCRATCH/logs" "$TEAM_ROOT/results"
 
 python - "$ENV_DIR" <<'PY'
 import sys
+
+import regex
+
+print(f"regex:         {regex.__version__} from {regex.__file__}")
 
 import rmu
 import torch

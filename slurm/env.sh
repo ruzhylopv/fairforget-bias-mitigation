@@ -29,6 +29,10 @@ umask 0007
 
 if [[ -f $ENV_DIR/bin/activate ]]; then
     source "$ENV_DIR/bin/activate"
+    # Modules put their packages on PYTHONPATH, which Python searches before the venv. Put the
+    # venv first so packages upgraded in it (e.g. regex for transformers) win over module copies.
+    ENV_SITE=$(echo "$ENV_DIR"/lib/python3.*/site-packages)
+    export PYTHONPATH=$ENV_SITE${PYTHONPATH:+:$PYTHONPATH}
 elif [[ -z $RMU_SETUP ]]; then
     echo "slurm/env.sh: no Python env at $ENV_DIR yet. Create it once with: make env" >&2
 fi
