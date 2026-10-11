@@ -1,5 +1,6 @@
 """Source code copied from https://github.com/centerforaisafety/wmdp. with slight adjustments"""
 
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +17,38 @@ from rmu.utils import (
 )
 from rmu.data import get_stereoset_data
 from rmu.config import run_dir
+
+
+class LossLog:
+    """One CSV row per training step, flushed right away so the file can be read mid-run."""
+
+    def __init__(self, path):
+        self.file = open(path, "w", newline="", encoding="utf-8")
+        self.writer = None
+
+    def write(self, row):
+        if self.writer is None:
+            self.writer = csv.DictWriter(self.file, fieldnames=list(row))
+            self.writer.writeheader()
+        self.writer.writerow(row)
+        self.file.flush()
+
+    def close(self):
+        self.file.close()
+
+
+def output_path(args, num_batches):
+    """Folder for the unlearned model (and its losses.csv)."""
+    if args.output_dir:
+        return Path(args.output_dir)
+    # Intermediate checkpoints go to scratch: paths.runs_root/<SLURM_JOB_ID>/<model>_...
+    return run_dir() / (
+        f"{Path(args.model_name_or_path).name}"
+        # args.alpha is a list (one weight per topic); write 100.0 as "100", no brackets.
+        f"_alpha-{','.join(f'{a:g}' for a in args.alpha)}"
+        f"_batches-{num_batches}"
+        f"_layer-{args.layer_id}"
+    )
 
 
 def run_rmu(
@@ -79,6 +112,11 @@ def run_rmu(
         len(forget_data_list),
         len(retain_data_list),
     )
+
+    path = output_path(args, num_batches)
+    path.mkdir(parents=True, exist_ok=True)
+    loss_log = LossLog(path / "losses.csv")
+    print(f"Logging losses to {path / 'losses.csv'}")
 
     truncation_side = tokenizer.truncation_side
     tokenizer.truncation_side = "right"
@@ -169,6 +207,14 @@ def run_rmu(
                     f"{params[0].grad.abs().mean().item():.4g}"
                 )
 
+                row = {
+                    "step": idx,
+                    "loss": loss.item(),
+                    "unlearn_loss": unlearn_loss.item(),
+                    "retain_loss": retain_loss.item(),
+                    "grad_mean": params[0].grad.abs().mean().item(),
+                }
+
                 # ---------------------------------------------------------
                 # Logging
                 # ---------------------------------------------------------
@@ -194,6 +240,8 @@ def run_rmu(
                             dim=-1,
                         ).mean()
                     )
+                    row["unlearn_cosine_sim"] = unlearn_cosine.item()
+                    row["retain_cosine_sim"] = retain_cosine.item()
                     print(
                         f"unlearn_cosine_sim="
                         f"{unlearn_cosine.item()}"
@@ -223,25 +271,15 @@ def run_rmu(
                         )
                     )
 
+                loss_log.write(row)
                 pbar.update(1)
 
     tokenizer.truncation_side = truncation_side
+    loss_log.close()
 
     # -------------------------------------------------------------
     # Save model
     # -------------------------------------------------------------
-
-    if args.output_dir:
-        path = args.output_dir
-    else:
-        # Intermediate checkpoints go to scratch: paths.runs_root/<SLURM_JOB_ID>/<model>_...
-        path = run_dir() / (
-            f"{Path(args.model_name_or_path).name}"
-            # args.alpha is a list (one weight per topic); write 100.0 as "100", no brackets.
-            f"_alpha-{','.join(f'{a:g}' for a in args.alpha)}"
-            f"_batches-{num_batches}"
-            f"_layer-{args.layer_id}"
-        )
 
     updated_model.save_pretrained(path)
     tokenizer.save_pretrained(path)
