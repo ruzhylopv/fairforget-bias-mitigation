@@ -2,19 +2,19 @@
 name = "fairforget-unlearning"
 version = "0.1.0"
 description = "Experiments in machine unlearning and fairness"
-readme = "README.md"
 authors = [
     { name = "Ruzhylo Pavlo", email = "ruzhylo.pn@ucu.edu.ua" },
     { name = "Taras Kopach", email = "kopach.pn@ucu.edu.ua" }
 ]
 requires-python = ">=3.13"
+# torch is not listed here: on JUPITER it comes from the PyTorch module (built for GH200),
+# and installing it from PyPI would shadow that build. Laptops get it from the `local` group.
 dependencies = [
+    "accelerate>=1.15.0",
     "ipykernel>=7.4.0",
-    "jupyterlab>=4.6.4",
     "numpy>=2.5.3",
     "pip>=26.2.1",
     "pyyaml>=6.0",
-    "torch>=2.14.1",
     "tqdm>=4.70.1",
     "transformers>=5.19.0",
 ]
@@ -23,6 +23,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.9",
+]
+# Provided by cluster modules (PyTorch, JupyterLab) on JUPITER; install only on laptops.
+local = [
+    "torch>=2.9",
+    "jupyterlab>=4.5",
 ]
 
 [build-system]
@@ -38,7 +43,9 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
 
 [tool.uv]
-package = false
+package = true
+
+[tool.uv.build-backend]
+module-name = "rmu"

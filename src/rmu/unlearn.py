@@ -89,7 +89,7 @@ def run_rmu(
                 # ---------------------------------------------------------
 
                 unlearn_inputs = tokenizer(
-                    unlearn_batch,
+                    [item["sentence"] for item in unlearn_batch],
                     return_tensors="pt",
                     padding=True,
                     truncation=True,
@@ -113,7 +113,7 @@ def run_rmu(
                 # ---------------------------------------------------------
 
                 retain_inputs = tokenizer(
-                    retain_batch,
+                    [item["sentence"] for item in retain_batch],
                     return_tensors="pt",
                     padding=True,
                     truncation=True,
@@ -290,9 +290,9 @@ def get_args():
 
     parser.add_argument(
         "--split",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Use separate StereoSet halves for forget and retain.",
+        help="Use separate StereoSet halves for forget and retain (--no-split uses all items).",
     )
 
     # Optional original arguments

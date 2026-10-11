@@ -59,7 +59,8 @@ def load_model(model_name_or_path):
         model_name_or_path,
         torch_dtype=torch_dtype,
         trust_remote_code=True,
-        device_map="auto",
+        # "auto" spreads big models over the GPUs; without CUDA it can hang, so load on CPU.
+        device_map="auto" if torch.cuda.is_available() else None,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(

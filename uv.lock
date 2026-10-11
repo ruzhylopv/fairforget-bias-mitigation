@@ -7,6 +7,24 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "accelerate"
+version = "1.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/b5/1d3ed029ac71d3f2961346829a268da923698e9fd63f218f78841f216bfd/accelerate-1.15.0.tar.gz", hash = "sha256:5654f8c5eaa0d4fa68b33e287a97765da6849bf6d51dcac874e73fbbddfb6134", size = 422615, upload-time = "2026-09-09T13:04:49.078Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/4c/34f0450479d01195027260da68d8a3880683f1640c3ca5adf64acb3185f1/accelerate-1.15.0-py3-none-any.whl", hash = "sha256:97eacca0b73e45cb867dbf8c5d5d4dc32219544300e0c8992c7334dc2ef33cec", size = 394295, upload-time = "2026-09-09T13:04:47.331Z" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -510,14 +528,13 @@ wheels = [
 [[package]]
 name = "fairforget-unlearning"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
+    { name = "accelerate" },
     { name = "ipykernel" },
-    { name = "jupyterlab" },
     { name = "numpy" },
     { name = "pip" },
     { name = "pyyaml" },
-    { name = "torch" },
     { name = "tqdm" },
     { name = "transformers" },
 ]
@@ -527,15 +544,18 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+local = [
+    { name = "jupyterlab" },
+    { name = "torch" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "accelerate", specifier = ">=1.15.0" },
     { name = "ipykernel", specifier = ">=7.4.0" },
-    { name = "jupyterlab", specifier = ">=4.6.4" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "pip", specifier = ">=26.2.1" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "torch", specifier = ">=2.14.1" },
     { name = "tqdm", specifier = ">=4.70.1" },
     { name = "transformers", specifier = ">=5.19.0" },
 ]
@@ -544,6 +564,10 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.9" },
+]
+local = [
+    { name = "jupyterlab", specifier = ">=4.5" },
+    { name = "torch", specifier = ">=2.9" },
 ]
 
 [[package]]

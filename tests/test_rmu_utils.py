@@ -47,16 +47,20 @@ def test_batches_are_limited_to_batch_size_and_keep_remainder(stereo_data):
     assert [len(batch) for batch in retain_batches] == [1, 1]
 
 
-def test_unsplit_mode_uses_same_group_for_both_sets(stereo_data):
+def test_unsplit_mode_uses_all_items_for_both_sets(stereo_data):
     forget_batches, retain_batches = data.get_stereoset_data(
         paths=["fixture.json"], batch_size=4, split=False
     )
 
     assert [sentence["id"] for batch in forget_batches for sentence in batch] == [
+        "0-stereo",
+        "1-stereo",
         "2-stereo",
         "3-stereo",
     ]
     assert [sentence["id"] for batch in retain_batches for sentence in batch] == [
+        "0-anti",
+        "1-anti",
         "2-anti",
         "3-anti",
     ]

@@ -21,7 +21,7 @@ def get_stereoset_data(
     Items are shuffled before they are divided into two groups. The forget
     batches contain stereotype sentences from the first group; the retain
     batches contain anti-stereotype sentences from the second group. When
-    ``split`` is false, both sentence sets are taken from the second group.
+    ``split`` is false, both sentence sets are taken from all gender items.
 
     Args:
         cat_type: StereoSet category to load (for example, ``intrasentence``).

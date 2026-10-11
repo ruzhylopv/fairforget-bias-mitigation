@@ -1,7 +1,10 @@
-.PHONY: setup lint format gpu-check
+.PHONY: setup test lint format gpu-check
 
 setup:
 	uv sync --all-groups
+
+test:
+	uv run pytest
 
 lint:
 	uv run ruff check .
