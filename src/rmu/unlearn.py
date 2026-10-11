@@ -237,7 +237,8 @@ def run_rmu(
         # Intermediate checkpoints go to scratch: paths.runs_root/<SLURM_JOB_ID>/<model>_...
         path = run_dir() / (
             f"{Path(args.model_name_or_path).name}"
-            f"_alpha-{args.alpha}"
+            # args.alpha is a list (one weight per topic); write 100.0 as "100", no brackets.
+            f"_alpha-{','.join(f'{a:g}' for a in args.alpha)}"
             f"_batches-{num_batches}"
             f"_layer-{args.layer_id}"
         )
