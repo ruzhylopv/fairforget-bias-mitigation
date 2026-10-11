@@ -24,6 +24,9 @@ export TRITON_CACHE_DIR=$CACHE_DIR/triton
 # hanging if something tries to download from the Hugging Face Hub.
 export HF_HUB_OFFLINE=1
 
+# Write prints to the job log immediately (not in buffered chunks), so `tail -f` shows progress.
+export PYTHONUNBUFFERED=1
+
 # New files are readable and writable by the team (project group), not by everyone.
 umask 0007
 

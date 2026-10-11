@@ -1,4 +1,4 @@
-.PHONY: setup test lint format env smoke submit jupyter tunnel jobs
+.PHONY: setup test lint format env smoke submit jupyter tunnel jobs watch
 
 # ---- Laptop -------------------------------------------------------------
 
@@ -50,3 +50,13 @@ jupyter:
 jobs:
 	@sacct -u $$USER -S $(or $(SINCE),$$(date +%F)) -X \
 		--format=JobID,JobName%12,Start,Elapsed,NNodes,NodeList%14,State,ExitCode
+
+# Follow a job's log live (Ctrl+C stops watching, not the job), e.g. make watch JOB=2274146
+# LOSSES=1 shows only the loss / cosine lines.
+watch:
+	@test -n "$(JOB)" || { echo "usage: make watch JOB=<job id> [LOSSES=1]"; exit 1; }
+	@log=$$(ls /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs/*-$(JOB).out 2>/dev/null) || \
+		{ echo "No log for job $(JOB) yet (still queued?). Check: make jobs"; exit 1; }; \
+	echo "== $$log"; \
+	if [ -n "$(LOSSES)" ]; then tail -n +1 -f "$$log" | grep --line-buffered -E "loss|cosine|nan|Error|Saved"; \
+	else tail -n +1 -f "$$log"; fi
