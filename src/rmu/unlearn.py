@@ -1,6 +1,6 @@
 """Source code copied from https://github.com/centerforaisafety/wmdp. with slight adjustments"""
 
-import datetime
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ from torch.optim import AdamW
 
 from rmu.utils import load_model, get_params, forward_with_cache
 from rmu.data import get_stereoset_data
+from rmu.config import run_dir
 
 
 def run_rmu(
@@ -223,14 +224,12 @@ def run_rmu(
     if args.output_dir:
         path = args.output_dir
     else:
-        date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-
-        path = (
-            f"models/{args.model_name_or_path}"
+        # Intermediate checkpoints go to scratch: paths.runs_root/<SLURM_JOB_ID>/<model>_...
+        path = run_dir() / (
+            f"{Path(args.model_name_or_path).name}"
             f"_alpha-{args.alpha}"
             f"_batches-{num_batches}"
             f"_layer-{args.layer_id}"
-            f"_{date}"
         )
 
     updated_model.save_pretrained(path)
@@ -252,6 +251,7 @@ def get_args():
         "--model_name_or_path",
         type=str,
         default="HuggingFaceH4/zephyr-7b-beta",
+        help="Short name from config/default.yaml (e.g. lapa-12b-instruct), local path, or hub id.",
     )
 
     parser.add_argument(

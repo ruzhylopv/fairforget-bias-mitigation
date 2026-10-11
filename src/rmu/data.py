@@ -1,13 +1,10 @@
 import json
 import random
-from pathlib import Path
+
+from rmu.config import load_config, repo_path
 
 random.seed(42)
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-STEREO_PATHS = [
-    PROJECT_ROOT / "data/stereoset/raw/test.json",
-    PROJECT_ROOT / "data/stereoset/raw/dev.json",
-]
+STEREO_PATHS = [repo_path(path) for path in load_config()["data"]["stereoset_files"]]
 
 def get_json_dict(path) -> dict:
     with open(path, encoding="utf-8") as f:

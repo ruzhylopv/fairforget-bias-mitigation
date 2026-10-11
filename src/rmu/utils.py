@@ -5,6 +5,9 @@ import os
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import random
+
+from rmu.config import resolve_model
+
 random.seed(0)
 
 ################################
@@ -48,6 +51,8 @@ def get_params(model, layer_ids, param_ids):
 
 
 def load_model(model_name_or_path):
+    # Short names from config/default.yaml (e.g. "lapa-12b-instruct") map to the shared models dir.
+    model_name_or_path = resolve_model(model_name_or_path)
     torch_dtype = "auto" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
 
     model = AutoModelForCausalLM.from_pretrained(

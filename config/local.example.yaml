@@ -1,0 +1,5 @@
+# Copy to config/local.yaml (git-ignored) to override config/default.yaml on this machine.
+# Only the keys you list are replaced; everything else keeps its default.
+paths:
+  models_root: ~/models          # wherever you keep local model folders
+  runs_root: runs                # relative paths are resolved from the repo root

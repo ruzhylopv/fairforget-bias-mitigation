@@ -211,6 +211,11 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Per-machine overrides of config/default.yaml (see config/local.example.yaml).
+config/local.yaml
+# Local run outputs when paths.runs_root is set to a repo-relative folder.
+runs/
+
 # Project artifacts: keep data and checkpoints in approved external storage.
 data/raw/*
 !data/raw/README.md
