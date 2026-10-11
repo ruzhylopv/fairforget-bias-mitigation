@@ -6,24 +6,82 @@ RMU (Representation Misdirection for Unlearning, adapted from
 ## Pilot experiment
 
 Unlearn gender stereotypes from **Lapa** (`lapa-12b-instruct`) on JUPITER and compare the
-model before and after.
+model before and after on BBQ.
 
 - **Forget set:** every gender `stereotype` sentence from StereoSet (intrasentence, test + dev).
 - **Retain set:** every gender `anti-stereotype` sentence.
 - That is `--no-split`: 1026 sentences on each side, 257 batches of 4.
 
-On the JUPITER login node, from your clone:
-
-```bash
-make env      # once
-make smoke    # check GPU + Lapa loading first
-make submit PURPOSE="pilot: RMU on Lapa, no-split" JOB_TIME=00:30:00 \
-    CMD="python -m rmu.unlearn --model_name_or_path lapa-12b-instruct --no-split --max_num_batches 257"
-```
-
 `--max_num_batches` defaults to 80, so without it only 320 of the 1026 sentences are used.
 
-Evaluation of the before/after models is not implemented yet.
+## Running the pilot, end to end
+
+### 1. Laptop: push your code
+
+```bash
+make test
+git add -A && git commit -m "..." && git push
+```
+
+### 2. JUPITER login node: update your clone
+
+```bash
+ssh <user>@login.jupiter.fz-juelich.de
+cd /e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/bias-mitigation-<user>
+git pull
+make env      # first time, or after dependencies in pyproject.toml change
+make smoke    # optional if it already passed: 2-min check of GPU + Lapa loading
+```
+
+### 3. Submit the unlearning job
+
+```bash
+make submit PURPOSE="pilot: RMU on Lapa, no-split" JOB_TIME=00:30:00 \
+    CMD="python -m rmu.unlearn --model_name_or_path lapa-12b-instruct --no-split --max_num_batches 257 --verbose"
+```
+
+It prints the job ID (e.g. `Submitted job 2275123`) plus the log and output paths.
+
+### 4. Watch it
+
+```bash
+make jobs                          # PENDING -> RUNNING -> COMPLETED / FAILED
+make watch JOB=<id> LOSSES=1       # live losses; Ctrl+C stops watching, not the job
+scancel <id>                       # only if something is wrong (e.g. nan)
+```
+
+Healthy run: `unlearn_loss` and `unlearn_cosine_sim` go down, `retain_loss` stays small and
+`retain_cosine_sim` stays near 1. Any `nan`: cancel and check the log.
+
+### 5. Check the results
+
+```bash
+RUN=/e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/runs/<id>
+cat $RUN/job.txt                                        # what ran
+column -t -s, $RUN/lapa-*/losses.csv | less             # per-step losses (q to quit)
+ls $RUN/lapa-12b-instruct_alpha-100_batches-257_layer-7  # the unlearned model
+column -t -s $'\t' /e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/usage_log.tsv
+```
+
+Edit the job's `result` / `notes` cells in `usage_log.tsv` with what you found (needed for the
+grant report).
+
+### 6. Keep what matters
+
+Scratch deletes files after 90 days. Copy the small files to long-term storage now; copy the
+24 GB model only if the evaluation says it's worth keeping:
+
+```bash
+RES=/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/results/pilot-<id>
+mkdir -p $RES && cp $RUN/job.txt $RUN/lapa-*/losses.csv $RES/
+```
+
+### 7. Evaluate before and after (BBQ, not implemented yet)
+
+The same evaluation runs on both models; only the model argument differs:
+
+- before: `--model_name_or_path lapa-12b-instruct`
+- after: `--model_name_or_path $RUN/lapa-12b-instruct_alpha-100_batches-257_layer-7`
 
 ## Open issues
 

@@ -37,6 +37,67 @@ class LossLog:
         self.file.close()
 
 
+def loss_positions(inputs, mode):
+    """Return ``(keep, words)``, two [B, T] bool masks.
+
+    ``words`` marks real tokens: not padding, not special tokens (BOS/EOS).
+    ``keep`` marks the positions the losses average over:
+        "all":   every position, including padding and BOS (original WMDP behaviour).
+        "words": same as ``words``. BOS has huge activations that are identical in every
+                 sentence and otherwise dominate the MSE.
+    Removes special_tokens_mask from inputs, because the model doesn't accept it.
+    """
+    special = inputs.pop("special_tokens_mask").bool()
+    words = inputs["attention_mask"].bool() & ~special
+    keep = torch.ones_like(words) if mode == "all" else words
+    return keep, words
+
+
+def masked_mse(activations, target, keep):
+    """Mean squared error over the kept positions, in float32.
+
+    activations: [B, T, H]; target: [B, T, H] or [1, 1, H]; keep: [B, T] bool.
+    With every position kept this equals torch.nn.functional.mse_loss.
+    """
+    per_token = (activations.float() - target.float()).pow(2).mean(dim=-1)
+    return (per_token * keep).sum() / keep.sum()
+
+
+def masked_mean(values, keep):
+    """Mean of a [B, T] tensor over the kept positions."""
+    return (values * keep).sum() / keep.sum()
+
+
+def print_position_norms(tokenizer, inputs, activations):
+    """Print the activation norm at every position of the first sentence (pads, BOS, words).
+
+    Direct check of whether special positions (BOS) dwarf the word tokens.
+    """
+    ids = inputs["input_ids"][0].tolist()
+    norms = activations[0].float().norm(dim=-1).tolist()
+    print("==== Layer activation norm per position (first forget sentence) ====")
+    for token, norm in zip(tokenizer.convert_ids_to_tokens(ids), norms):
+        print(f"{token!r:>16}  {norm:12,.1f}")
+    print("====================================================================")
+
+
+def save_loss_plot(csv_path, title):
+    """Draw losses.csv as losses.png next to it. Never fails the run: training is done by now."""
+    try:
+        import matplotlib.pyplot as plt
+
+        from rmu.plots import load_losses, plot_losses
+
+        png_path = Path(csv_path).with_name("losses.png")
+        fig = plot_losses(load_losses(csv_path), title=title, save_to=png_path)
+        plt.close(fig)
+        print(f"Saved loss plot to {png_path}")
+        return png_path
+    except Exception as error:  # noqa: BLE001 - a missing plot must not lose the trained model
+        print(f"Could not plot {csv_path}: {error}")
+        return None
+
+
 def output_path(args, num_batches):
     """Folder for the unlearned model (and its losses.csv)."""
     if args.output_dir:
@@ -48,6 +109,7 @@ def output_path(args, num_batches):
         f"_alpha-{','.join(f'{a:g}' for a in args.alpha)}"
         f"_batches-{num_batches}"
         f"_layer-{args.layer_id}"
+        f"_positions-{args.loss_positions}"
     )
 
 
@@ -142,7 +204,9 @@ def run_rmu(
                     padding=True,
                     truncation=True,
                     max_length=args.max_length,
+                    return_special_tokens_mask=True,
                 ).to(updated_model.device)
+                unlearn_keep, unlearn_words = loss_positions(unlearn_inputs, args.loss_positions)
 
                 updated_forget_activations = forward_with_cache(
                     updated_model,
@@ -151,10 +215,10 @@ def run_rmu(
                     no_grad=False,
                 ).to(updated_model.device)
 
-                unlearn_loss = torch.nn.functional.mse_loss(
-                    updated_forget_activations,
-                    control_vec,
-                )
+                unlearn_loss = masked_mse(updated_forget_activations, control_vec, unlearn_keep)
+
+                if idx == 0:
+                    print_position_norms(tokenizer, unlearn_inputs, updated_forget_activations)
 
                 # ---------------------------------------------------------
                 # Retain loss
@@ -166,7 +230,9 @@ def run_rmu(
                     padding=True,
                     truncation=True,
                     max_length=args.max_length,
+                    return_special_tokens_mask=True,
                 ).to(updated_model.device)
+                retain_keep, _ = loss_positions(retain_inputs, args.loss_positions)
 
                 updated_retain_activations = forward_with_cache(
                     updated_model,
@@ -182,9 +248,8 @@ def run_rmu(
                     no_grad=True,
                 ).to(updated_model.device)
 
-                retain_loss = torch.nn.functional.mse_loss(
-                    updated_retain_activations,
-                    frozen_retain_activations,
+                retain_loss = masked_mse(
+                    updated_retain_activations, frozen_retain_activations, retain_keep
                 )
 
                 retain_loss *= args.alpha[topic_idx]
@@ -214,6 +279,12 @@ def run_rmu(
                     "retain_loss": retain_loss.item(),
                     "grad_mean": params[0].grad.abs().mean().item(),
                 }
+                with torch.no_grad():
+                    # Norms of word vs other (pad/BOS/EOS) positions: the scale the control
+                    # vector (--steering_coeffs) should be compared with.
+                    norms = updated_forget_activations.float().norm(dim=-1)
+                    row["forget_word_norm"] = masked_mean(norms, unlearn_words).item()
+                    row["forget_other_norm"] = masked_mean(norms, ~unlearn_words).item()
 
                 # ---------------------------------------------------------
                 # Logging
@@ -226,19 +297,22 @@ def run_rmu(
                         module=frozen_module,
                         no_grad=True,
                     ).to(updated_model.device)
-                    unlearn_cosine = (
+                    # float32: in bf16 a cosine near 1 can only be 1.0 or 0.996.
+                    unlearn_cosine = masked_mean(
                         torch.nn.functional.cosine_similarity(
-                            updated_forget_activations,
-                            frozen_forget_activations,
+                            updated_forget_activations.float(),
+                            frozen_forget_activations.float(),
                             dim=-1,
-                        ).mean()
+                        ),
+                        unlearn_keep,
                     )
-                    retain_cosine = (
+                    retain_cosine = masked_mean(
                         torch.nn.functional.cosine_similarity(
-                            updated_retain_activations,
-                            frozen_retain_activations,
+                            updated_retain_activations.float(),
+                            frozen_retain_activations.float(),
                             dim=-1,
-                        ).mean()
+                        ),
+                        retain_keep,
                     )
                     row["unlearn_cosine_sim"] = unlearn_cosine.item()
                     row["retain_cosine_sim"] = retain_cosine.item()
@@ -276,6 +350,7 @@ def run_rmu(
 
     tokenizer.truncation_side = truncation_side
     loss_log.close()
+    save_loss_plot(path / "losses.csv", title=f"RMU training: {path.name}")
 
     # -------------------------------------------------------------
     # Save model
@@ -401,6 +476,14 @@ def get_args():
         type=str,
         default="mlp.down_proj.weight",
         help="Comma-separated parameter names (inside each layer of --layer_ids) to train.",
+    )
+
+    parser.add_argument(
+        "--loss_positions",
+        choices=["all", "words"],
+        default="all",
+        help="Positions the losses average over: 'all' (original WMDP, includes padding and "
+        "BOS) or 'words' (real tokens only; BOS's huge activations otherwise dominate).",
     )
 
     parser.add_argument(
