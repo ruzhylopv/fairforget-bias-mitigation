@@ -25,9 +25,8 @@ Evaluation of the before/after models is not implemented yet.
 
 ## Open issues
 
-- Lapa is Gemma-3-based and multimodal. The default `--module_str`
-  (`{model_name}.model.layers[{layer_id}]`) and `get_params` assume a plain decoder layout, so
-  the layer path may need changing before the pilot can run. Check it on the cluster first.
+- Lapa has 48 layers; the defaults (`--layer_id 7`, `--layer_ids 5,6,7`) come from WMDP's
+  32-layer Zephyr and haven't been tuned for Lapa.
 - Running on JUPITER needs the Slurm job scripts (next setup step). GPU work must run inside a
   Slurm job, not on the login node.
 
@@ -50,7 +49,7 @@ To check the whole pipeline without a GPU, use a tiny random model from the Hugg
 
 ```bash
 uv run python -m rmu.unlearn --model_name_or_path hf-internal-testing/tiny-random-LlamaForCausalLM \
-    --layer_id 1 --layer_ids 0,1 --param_ids 0 --max_num_batches 3 --output_dir runs/tiny
+    --layer_id 1 --layer_ids 0,1 --max_num_batches 3 --output_dir runs/tiny
 ```
 
 Put laptop path overrides in `config/local.yaml` (copy `config/local.example.yaml`).

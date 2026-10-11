@@ -7,7 +7,13 @@ import torch
 import tqdm
 from torch.optim import AdamW
 
-from rmu.utils import load_model, get_params, forward_with_cache
+from rmu.utils import (
+    forward_with_cache,
+    get_decoder_layers,
+    get_hidden_size,
+    get_params,
+    load_model,
+)
 from rmu.data import get_stereoset_data
 from rmu.config import run_dir
 
@@ -32,30 +38,34 @@ def run_rmu(
     params = get_params(
         updated_model,
         args.layer_ids,
-        args.param_ids,
+        args.param_names,
     )
 
     optimizer = AdamW(params, lr=args.lr)
 
-    frozen_module = eval(
-        args.module_str.format(
-            model_name="frozen_model",
-            layer_id=args.layer_id,
+    if args.module_str:
+        frozen_module = eval(
+            args.module_str.format(
+                model_name="frozen_model",
+                layer_id=args.layer_id,
+            )
         )
-    )
 
-    updated_module = eval(
-        args.module_str.format(
-            model_name="updated_model",
-            layer_id=args.layer_id,
+        updated_module = eval(
+            args.module_str.format(
+                model_name="updated_model",
+                layer_id=args.layer_id,
+            )
         )
-    )
+    else:
+        frozen_module = get_decoder_layers(frozen_model)[args.layer_id]
+        updated_module = get_decoder_layers(updated_model)[args.layer_id]
 
     # This run uses one topic (gender), so it needs one control vector.
     random_vector = torch.rand(
         1,
         1,
-        updated_model.config.hidden_size,
+        get_hidden_size(updated_model),
         dtype=updated_model.dtype,
         device=updated_model.device,
     )
@@ -257,7 +267,9 @@ def get_args():
     parser.add_argument(
         "--module_str",
         type=str,
-        default="{model_name}.model.layers[{layer_id}]",
+        default=None,
+        help="Override the hooked module, e.g. '{model_name}.model.layers[{layer_id}]'. "
+        "By default the decoder layer --layer_id is found automatically.",
     )
 
     parser.add_argument(
@@ -346,10 +358,10 @@ def get_args():
     )
 
     parser.add_argument(
-        "--param_ids",
+        "--param_names",
         type=str,
-        default="6",
-        help="Parameter IDs passed to get_params().",
+        default="mlp.down_proj.weight",
+        help="Comma-separated parameter names (inside each layer of --layer_ids) to train.",
     )
 
     parser.add_argument(
@@ -380,10 +392,7 @@ def get_args():
         for layer_id in args.layer_ids.split(",")
     ]
 
-    args.param_ids = [
-        int(param_id)
-        for param_id in args.param_ids.split(",")
-    ]
+    args.param_names = args.param_names.split(",")
 
     return args
 

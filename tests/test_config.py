@@ -20,7 +20,7 @@ def write(path: Path, text: str) -> None:
 def test_default_config_lists_models_and_paths():
     loaded = config.load_config()
 
-    assert loaded["models"]["lapa-12b-instruct"] == "lapa-v0.1.2-instruct"
+    assert loaded["models"]["lapa-12b-instruct"].startswith("lapa-v0.1.2-instruct/")
     assert {"models_root", "runs_root", "results_root", "usage_log"} <= loaded["paths"].keys()
     for path in loaded["data"]["stereoset_files"]:
         assert config.repo_path(path).exists()

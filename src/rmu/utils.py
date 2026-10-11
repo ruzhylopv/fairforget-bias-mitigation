@@ -41,12 +41,39 @@ def forward_with_cache(model, inputs, module, no_grad=True):
 #######################################
 
 
-def get_params(model, layer_ids, param_ids):
+def get_decoder_layers(model):
+    """Return the list of decoder layers.
+
+    Text-only models (Llama, Qwen) keep them at ``model.model.layers``; multimodal Gemma 3
+    checkpoints (Lapa, Gemma, Mamay) at ``model.model.language_model.layers``.
+    """
+    inner = model.model
+    if hasattr(inner, "language_model"):
+        inner = inner.language_model
+    return inner.layers
+
+
+def get_hidden_size(model):
+    # Multimodal configs keep the text model's settings in text_config.
+    return model.config.get_text_config().hidden_size
+
+
+def get_params(model, layer_ids, param_names):
+    """Select parameters by name (e.g. ``mlp.down_proj.weight``) in the given layers.
+
+    Names are used instead of positions because the parameter order differs between
+    architectures: ``down_proj`` is parameter 6 in a Llama layer but 8 in a Gemma 3 layer.
+    """
+    layers = get_decoder_layers(model)
     params = []
     for layer_id in layer_ids:
-        for i, p in enumerate(model.model.layers[layer_id].parameters()):
-            if i in param_ids:
-                params.append(p)
+        named = dict(layers[layer_id].named_parameters())
+        for name in param_names:
+            if name not in named:
+                raise ValueError(
+                    f"layer {layer_id} has no parameter {name!r}; available: {list(named)}"
+                )
+            params.append(named[name])
     return params
 
 
