@@ -25,7 +25,8 @@ shift
 cd "$REPO_DIR"
 job_id=$(sbatch --parsable --time="${JOB_TIME:-01:00:00}" --job-name="${JOB_NAME:-rmu}" \
     slurm/run.sbatch "$@")
+run_dir=$(python -m rmu.config paths.runs_root)/$job_id
 echo "Submitted job $job_id"
 echo "  log:     $TEAM_SCRATCH/logs/${JOB_NAME:-rmu}-$job_id.out"
-echo "  outputs: $(python -m rmu.config paths.runs_root)/$job_id/"
+echo "  outputs: $run_dir/"
 echo "  status:  squeue -j $job_id     cancel: scancel $job_id"

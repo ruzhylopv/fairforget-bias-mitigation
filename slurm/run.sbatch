@@ -24,7 +24,7 @@ export RUN_DIR
 mkdir -p "$RUN_DIR"
 usage_log_start "$*"
 
-# What ran, from which code: enough to reproduce the run later.
+# What ran, where and when.
 {
     echo "job_id:   $SLURM_JOB_ID"
     echo "purpose:  ${RUN_PURPOSE:-}"
@@ -33,9 +33,6 @@ usage_log_start "$*"
     echo "nodes:    $SLURM_JOB_NODELIST"
     echo "started:  $(date "+%F %T")"
     echo "repo:     $REPO_DIR"
-    echo "commit:   $(git rev-parse HEAD)"
-    echo "changes:  $(git status --porcelain | wc -l | tr -d " ") uncommitted file(s)"
 } | tee "$RUN_DIR/job.txt"
-git diff > "$RUN_DIR/uncommitted.diff"
 
 srun "$@"
