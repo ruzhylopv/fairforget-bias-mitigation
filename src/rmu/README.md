@@ -17,7 +17,7 @@ On the JUPITER login node, from your clone:
 ```bash
 make env      # once
 make smoke    # check GPU + Lapa loading first
-make submit PURPOSE="pilot: RMU on Lapa, no-split" JOB_TIME=02:00:00 \
+make submit PURPOSE="pilot: RMU on Lapa, no-split" JOB_TIME=00:30:00 \
     CMD="python -m rmu.unlearn --model_name_or_path lapa-12b-instruct --no-split --max_num_batches 257"
 ```
 
@@ -29,7 +29,6 @@ Evaluation of the before/after models is not implemented yet.
 
 - Lapa has 48 layers; the defaults (`--layer_id 7`, `--layer_ids 5,6,7`) come from WMDP's
   32-layer Zephyr and haven't been tuned for Lapa.
-- The 2-hour `JOB_TIME` is a guess; check the smoke test's load time and adjust.
 
 ## Where results go
 
