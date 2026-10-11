@@ -68,3 +68,10 @@ def test_run_dir_outside_slurm_is_timestamped(cfg, monkeypatch):
 
     assert run.parent == Path("/scratch/runs")
     assert run.name.startswith("local-")
+
+
+def test_get_resolves_dotted_keys(cfg):
+    cfg["paths"]["runs_root"] = "runs"
+
+    assert config.get("paths.runs_root", cfg) == config.PROJECT_ROOT / "runs"
+    assert config.get("models.lapa-12b-instruct", cfg) == "lapa-v0.1.2-instruct"

@@ -1,14 +1,10 @@
 """Copied from https://github.com/centerforaisafety/wmdp."""
 
-import json
-import os
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import random
 
 from rmu.config import resolve_model
 
-random.seed(0)
 
 ################################
 ##### Activation functions #####

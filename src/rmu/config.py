@@ -72,3 +72,19 @@ def run_dir(config: dict | None = None) -> Path:
     if not job_id:
         job_id = "local-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     return repo_path(config["paths"]["runs_root"]) / job_id
+
+
+def get(dotted_key: str, config: dict | None = None):
+    """Look up a value like ``"paths.runs_root"``. Values under ``paths`` are resolved."""
+    config = load_config() if config is None else config
+    value = config
+    for key in dotted_key.split("."):
+        value = value[key]
+    return repo_path(value) if dotted_key.startswith("paths.") else value
+
+
+if __name__ == "__main__":
+    # Used by the slurm/ scripts, e.g. `python -m rmu.config paths.runs_root`.
+    import sys
+
+    print(get(sys.argv[1]))

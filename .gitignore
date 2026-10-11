@@ -235,8 +235,4 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# job outputs
-.out
-
-
 CLAUDE.md
