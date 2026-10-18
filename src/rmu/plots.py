@@ -47,7 +47,7 @@ def load_losses(path) -> pd.DataFrame:
 
 def summarize(losses: pd.DataFrame) -> pd.DataFrame:
     """First, last and min value of each column, plus the step where NaN first appears."""
-    columns = [c for c in losses.columns if c != "step"]
+    columns = [c for c in losses.select_dtypes("number").columns if c != "step"]
     summary = pd.DataFrame(
         {
             "first": losses[columns].iloc[0],
