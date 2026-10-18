@@ -90,6 +90,31 @@ def test_all_mode_keeps_every_position_but_still_reports_words():
     assert words.tolist() == [[False, False, True, True], [False, True, True, True]]
 
 
+def test_diff_mode_starts_at_the_first_differing_word_despite_different_padding():
+    # "BOS The caring mother" vs "BOS The un caring mother": the stereotype is one token
+    # shorter, so it gets one more pad on the left and the positions don't line up.
+    ids = torch.tensor([[0, 2, 10, 11, 12], [2, 20, 21, 22, 23]])
+    other_ids = torch.tensor([[2, 10, 13, 11, 12], [2, 20, 21, 22, 23]])
+    words = torch.tensor([[0, 0, 1, 1, 1], [0, 1, 1, 1, 1]]).bool()
+    other_words = torch.tensor([[0, 1, 1, 1, 1], [0, 1, 1, 1, 1]]).bool()
+
+    keep = unlearn.from_first_difference(ids, words, other_ids, other_words)
+
+    assert keep.tolist() == [
+        [False, False, False, True, True],  # "The" is shared; "caring" vs "un" differs
+        [False, False, False, False, True],  # identical sentences: only the last word
+    ]
+
+
+def test_diff_mode_needs_no_split(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["unlearn", "--loss_positions", "diff"])
+    with pytest.raises(SystemExit):
+        unlearn.get_args()
+
+    monkeypatch.setattr("sys.argv", ["unlearn", "--loss_positions", "diff", "--no-split"])
+    assert unlearn.get_args().loss_positions == "diff"
+
+
 def test_masked_mse_with_everything_kept_equals_mse_loss():
     activations = torch.randn(2, 4, 8)
     target = torch.randn(1, 1, 8)
