@@ -110,7 +110,8 @@ def output_path(args, num_batches):
         f"_alpha-{','.join(f'{a:g}' for a in args.alpha)}"
         f"_batches-{num_batches}"
         f"_layer-{args.layer_id}"
-        f"_positions-{args.loss_positions}"
+        + (f"_beta-{args.beta:g}" if args.beta is not None else "")
+        + f"_positions-{args.loss_positions}"
     )
 
 
@@ -170,9 +171,10 @@ def run_rmu(
         dtype=updated_model.dtype,
         device=updated_model.device,
     )
-    control_vec = (
-        random_vector / torch.norm(random_vector)
-    ) * args.steering_coeff_list[0]
+    # Fixed RMU: target = steering_coeff * u.
+    # Adaptive RMU (--beta): target = beta * ||frozen activation of the token|| * u,
+    # computed per forget token inside the loop.
+    direction = random_vector / torch.norm(random_vector)
 
     # Number of batches we can actually process.
     num_batches = min(
@@ -221,6 +223,20 @@ def run_rmu(
                     module=updated_module,
                     no_grad=False,
                 ).to(updated_model.device)
+
+                frozen_forget_activations = None
+                if args.beta is None:
+                    control_vec = direction * args.steering_coeff_list[0]
+                else:
+                    frozen_forget_activations = forward_with_cache(
+                        frozen_model,
+                        unlearn_inputs,
+                        module=frozen_module,
+                        no_grad=True,
+                    ).to(updated_model.device)
+                    # [B, T, 1]: each token's own activation scale.
+                    frozen_norms = frozen_forget_activations.float().norm(dim=-1, keepdim=True)
+                    control_vec = direction.float() * args.beta * frozen_norms
 
                 unlearn_loss = masked_mse(updated_forget_activations, control_vec, unlearn_keep)
 
@@ -292,18 +308,21 @@ def run_rmu(
                     norms = updated_forget_activations.float().norm(dim=-1)
                     row["forget_word_norm"] = masked_mean(norms, unlearn_words).item()
                     row["forget_other_norm"] = masked_mean(norms, ~unlearn_words).item()
+                    target_norms = control_vec.float().norm(dim=-1).expand_as(norms)
+                    row["target_word_norm"] = masked_mean(target_norms, unlearn_words).item()
 
                 # ---------------------------------------------------------
                 # Logging
                 # ---------------------------------------------------------
 
                 if args.verbose:
-                    frozen_forget_activations = forward_with_cache(
-                        frozen_model,
-                        unlearn_inputs,
-                        module=frozen_module,
-                        no_grad=True,
-                    ).to(updated_model.device)
+                    if frozen_forget_activations is None:
+                        frozen_forget_activations = forward_with_cache(
+                            frozen_model,
+                            unlearn_inputs,
+                            module=frozen_module,
+                            no_grad=True,
+                        ).to(updated_model.device)
                     # float32: in bf16 a cosine near 1 can only be 1.0 or 0.996.
                     unlearn_cosine = masked_mean(
                         torch.nn.functional.cosine_similarity(
@@ -464,7 +483,15 @@ def get_parser():
         "--steering_coeffs",
         type=str,
         default="20",
-        help="Control-vector magnitude.",
+        help="Control-vector magnitude (ignored with --beta).",
+    )
+
+    parser.add_argument(
+        "--beta",
+        type=float,
+        default=None,
+        help="Adaptive RMU: scale the control vector per forget token to "
+        "beta * ||frozen activation at --layer_id||, instead of the fixed --steering_coeffs.",
     )
 
     parser.add_argument(
