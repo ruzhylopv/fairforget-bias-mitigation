@@ -30,6 +30,7 @@ def args(**overrides):
         alpha=[100.0],
         layer_id=7,
         loss_positions="words",
+        beta=None,
     )
     return Namespace(**{**defaults, **overrides})
 
@@ -44,10 +45,23 @@ def test_output_path_has_no_brackets_in_alpha(monkeypatch, tmp_path):
     assert unlearn.output_path(args(alpha=[100.0, 1.5]), 3).name.startswith(
         "lapa-12b-instruct_alpha-100,1.5_"
     )
+    assert unlearn.output_path(args(beta=1.0), 257).name.endswith("_layer-7_beta-1_positions-words")
 
 
 def test_output_dir_overrides_default(tmp_path):
     assert unlearn.output_path(args(output_dir=str(tmp_path / "x")), 1) == tmp_path / "x"
+
+
+def test_change_stats_separates_shrinking_from_rotation():
+    frozen = torch.tensor([[[3.0, 4.0], [1.0, 0.0]]])
+    direction = torch.tensor([[[0.0, 1.0]]])
+    words = torch.tensor([[True, False]])
+
+    # Halving every activation: shorter, same direction.
+    stats = unlearn.change_stats("forget", 0.5 * frozen, frozen, direction, words)
+
+    assert stats["forget_norm_ratio"] == pytest.approx(0.5)
+    assert stats["forget_cos_u"] == pytest.approx(0.8)
 
 
 def left_padded_batch():

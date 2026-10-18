@@ -68,6 +68,21 @@ def masked_mean(values, keep):
     return (values * keep).sum() / keep.sum()
 
 
+def change_stats(prefix, updated, frozen, direction, words):
+    """Split the change of the activations into shrinking and rotation, per word token.
+
+    ``{prefix}_norm_ratio``: mean of |a| / |a_frozen| (1 = same length, < 1 = shrunk).
+    ``{prefix}_cos_u``: mean cosine between a and the control direction u (rotation towards u).
+    """
+    updated, frozen = updated.float(), frozen.float()
+    ratio = updated.norm(dim=-1) / frozen.norm(dim=-1)
+    cos_u = torch.nn.functional.cosine_similarity(updated, direction.float(), dim=-1)
+    return {
+        f"{prefix}_norm_ratio": masked_mean(ratio, words).item(),
+        f"{prefix}_cos_u": masked_mean(cos_u, words).item(),
+    }
+
+
 def print_position_norms(tokenizer, inputs, activations):
     """Print the activation norm at every position of the first sentence (pads, BOS, words).
 
@@ -217,16 +232,17 @@ def run_rmu(
                     no_grad=False,
                 ).to(updated_model.device)
 
-                frozen_forget_activations = None
+                # Needed for --beta and for the shrink/rotation columns of losses.csv.
+                frozen_forget_activations = forward_with_cache(
+                    frozen_model,
+                    unlearn_inputs,
+                    module=frozen_module,
+                    no_grad=True,
+                ).to(updated_model.device)
+
                 if args.beta is None:
                     control_vec = direction * args.steering_coeff_list[0]
                 else:
-                    frozen_forget_activations = forward_with_cache(
-                        frozen_model,
-                        unlearn_inputs,
-                        module=frozen_module,
-                        no_grad=True,
-                    ).to(updated_model.device)
                     # [B, T, 1]: each token's own activation scale.
                     frozen_norms = frozen_forget_activations.float().norm(dim=-1, keepdim=True)
                     control_vec = direction.float() * args.beta * frozen_norms
@@ -248,7 +264,7 @@ def run_rmu(
                     max_length=args.max_length,
                     return_special_tokens_mask=True,
                 ).to(updated_model.device)
-                retain_keep, _ = loss_positions(retain_inputs, args.loss_positions)
+                retain_keep, retain_words = loss_positions(retain_inputs, args.loss_positions)
 
                 updated_retain_activations = forward_with_cache(
                     updated_model,
@@ -289,6 +305,7 @@ def run_rmu(
                 )
 
                 row = {
+                    "epoch": epoch,
                     "step": idx,
                     "loss": loss.item(),
                     "unlearn_loss": unlearn_loss.item(),
@@ -304,18 +321,46 @@ def run_rmu(
                     target_norms = control_vec.float().norm(dim=-1).expand_as(norms)
                     row["target_word_norm"] = masked_mean(target_norms, unlearn_words).item()
 
+                    # Loss of the original model on this batch: the "no change" baseline.
+                    row["unlearn_loss_frozen"] = masked_mse(
+                        frozen_forget_activations, control_vec, unlearn_keep
+                    ).item()
+                    # Did the activations shrink or rotate towards u? Retain shows whether the
+                    # same change also hits retain data (i.e. whether the edit is selective).
+                    row.update(
+                        change_stats(
+                            "forget",
+                            updated_forget_activations,
+                            frozen_forget_activations,
+                            direction,
+                            unlearn_words,
+                        )
+                    )
+                    row.update(
+                        change_stats(
+                            "retain",
+                            updated_retain_activations,
+                            frozen_retain_activations,
+                            direction,
+                            retain_words,
+                        )
+                    )
+                    # Lowest per-sentence cosine to the original model: one sentence or the
+                    # whole batch behind a dip? forget_ids says which sentences to look at.
+                    word_cos = torch.nn.functional.cosine_similarity(
+                        updated_forget_activations.float(),
+                        frozen_forget_activations.float(),
+                        dim=-1,
+                    )
+                    sentence_cos = (word_cos * unlearn_words).sum(1) / unlearn_words.sum(1)
+                    row["forget_cos_min"] = sentence_cos.min().item()
+                    row["forget_ids"] = ";".join(item["id"] for item in unlearn_batch)
+
                 # ---------------------------------------------------------
                 # Logging
                 # ---------------------------------------------------------
 
                 if args.verbose:
-                    if frozen_forget_activations is None:
-                        frozen_forget_activations = forward_with_cache(
-                            frozen_model,
-                            unlearn_inputs,
-                            module=frozen_module,
-                            no_grad=True,
-                        ).to(updated_model.device)
                     # float32: in bf16 a cosine near 1 can only be 1.0 or 0.996.
                     unlearn_cosine = masked_mean(
                         torch.nn.functional.cosine_similarity(
