@@ -30,3 +30,6 @@ data:
   stereoset_files:
     - data/stereoset/raw/test.json
     - data/stereoset/raw/dev.json
+  bbq_files:
+    - data/bbq/raw/Gender_identity.jsonl
+  bbq_metadata: data/bbq/raw/additional_metadata.csv

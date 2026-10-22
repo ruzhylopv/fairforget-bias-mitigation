@@ -1,4 +1,4 @@
-.PHONY: setup test lint format env smoke submit jupyter tunnel jobs watch
+.PHONY: setup test lint format env smoke submit evaluate jupyter tunnel jobs watch
 
 # ---- Laptop -------------------------------------------------------------
 
@@ -40,6 +40,17 @@ submit:
 	@test -n "$(PURPOSE)" -a -n "$(CMD)" || \
 		{ echo 'usage: make submit PURPOSE="..." CMD="python -m ..." [JOB_TIME=hh:mm:ss]'; exit 1; }
 	JOB_TIME=$(or $(JOB_TIME),01:00:00) slurm/submit.sh "$(PURPOSE)" $(CMD)
+
+# Evaluate a model on the BBQ benchmark (defaults to MODEL=lapa-12b-instruct).
+# Usage:
+#   make evaluate
+#   make evaluate MODEL=lapa-12b-instruct
+# Optional: GENDER_TYPES="F M", JOB_TIME=01:00:00, EXTRA_ARGS="..."
+MODEL ?= lapa-12b-instruct
+evaluate:
+	$(MAKE) submit PURPOSE="eval: BBQ on $(MODEL)" \
+		CMD="python -m evaluation.bbq.evaluate --model_name_or_path $(MODEL)$(if $(GENDER_TYPES), --gender_types $(GENDER_TYPES))$(if $(EXTRA_ARGS), $(EXTRA_ARGS))" \
+		JOB_TIME=$(or $(JOB_TIME),01:00:00)
 
 # JupyterLab on a GPU node; the job log tells you how to connect.
 jupyter:
