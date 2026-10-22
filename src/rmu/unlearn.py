@@ -1,5 +1,6 @@
 """Source code copied from https://github.com/centerforaisafety/wmdp. with slight adjustments"""
 
+import argparse
 import csv
 from pathlib import Path
 
@@ -120,7 +121,12 @@ def run_rmu(
     forget_data_list,
     retain_data_list,
     args,
+    save_model=True,
 ):
+    """Train, write losses.csv (and the model unless ``save_model=False``) to output_path.
+
+    Returns the losses.csv rows as a list of dicts.
+    """
     rmu_config = vars(args)
 
     print("==== RMU Config ====")
@@ -178,6 +184,7 @@ def run_rmu(
     path = output_path(args, num_batches)
     path.mkdir(parents=True, exist_ok=True)
     loss_log = LossLog(path / "losses.csv")
+    rows = []
     print(f"Logging losses to {path / 'losses.csv'}")
 
     truncation_side = tokenizer.truncation_side
@@ -346,6 +353,7 @@ def run_rmu(
                     )
 
                 loss_log.write(row)
+                rows.append(row)
                 pbar.update(1)
 
     tokenizer.truncation_side = truncation_side
@@ -356,15 +364,22 @@ def run_rmu(
     # Save model
     # -------------------------------------------------------------
 
-    updated_model.save_pretrained(path)
-    tokenizer.save_pretrained(path)
+    if save_model:
+        updated_model.save_pretrained(path)
+        tokenizer.save_pretrained(path)
+        print(f"Saved model to {path}")
 
-    print(f"Saved model to {path}")
+    return rows
 
 
-def get_args():
-    import argparse
+def seed_everything(seed):
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
+
+def get_parser():
     parser = argparse.ArgumentParser()
 
     # -------------------------------------------------------------
@@ -497,7 +512,13 @@ def get_args():
         action="store_true",
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+def get_args(parser=None, argv=None):
+    """Parse the CLI (``parser`` defaults to get_parser()) and turn the list options into lists."""
+    parser = parser or get_parser()
+    args = parser.parse_args(argv)
 
     args.steering_coeff_list = [
         float(c)
@@ -527,10 +548,7 @@ if __name__ == "__main__":
     # Reproducibility
     # -------------------------------------------------------------
 
-    torch.cuda.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    seed_everything(args.seed)
 
     # -------------------------------------------------------------
     # Load models
