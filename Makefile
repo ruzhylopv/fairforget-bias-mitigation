@@ -55,8 +55,13 @@ jobs:
 # LOSSES=1 shows only the loss / cosine lines.
 watch:
 	@test -n "$(JOB)" || { echo "usage: make watch JOB=<job id> [LOSSES=1]"; exit 1; }
-	@log=$$(ls /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs/*-$(JOB).out 2>/dev/null) || \
-		{ echo "No log for job $(JOB) yet (still queued?). Check: make jobs"; exit 1; }; \
-	echo "== $$log"; \
+	@# Wait while the job is queued or starting up; give up only if it left the queue without a log.
+	@while ! log=$$(ls /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs/*-$(JOB).out 2>/dev/null); do \
+		state=$$(squeue -h -j $(JOB) -o %T 2>/dev/null); \
+		[ -n "$$state" ] || { echo; echo "Job $(JOB) is not in the queue and has no log. Check: make jobs"; exit 1; }; \
+		printf '\rWaiting for the log of job %s (%s)... ' "$(JOB)" "$$state"; \
+		sleep 10; \
+	done; \
+	echo; echo "== $$log"; \
 	if [ -n "$(LOSSES)" ]; then tail -n +1 -f "$$log" | grep --line-buffered -E "loss|cosine|nan|Error|Saved"; \
 	else tail -n +1 -f "$$log"; fi
