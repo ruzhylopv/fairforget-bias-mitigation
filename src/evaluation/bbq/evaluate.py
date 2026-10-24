@@ -40,12 +40,27 @@ logger = logging.getLogger(__name__)
 class Evaluator:
     """Evaluates language models on the BBQ benchmark."""
 
-    def __init__(self, model_name_or_path: str, mock: bool = False):
+    def __init__(
+        self,
+        model_name_or_path: str,
+        mock: bool = False,
+        model: Any = None,
+        tokenizer: Any = None,
+    ):
+        """``model``/``tokenizer``: an already loaded model (e.g. right after unlearning)
+        to evaluate instead of loading ``model_name_or_path``, which is then only a label."""
         self.model_name_or_path = model_name_or_path
         self.mock = mock
         self.model = None
         self.tokenizer = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        if model is not None:
+            self.mock = False
+            self.model, self.tokenizer = model, tokenizer
+            self.model.eval()
+            self._setup_choice_tokens()
+            return
 
         resolved_path = resolve_model(model_name_or_path)
         path_exists = os.path.exists(resolved_path)
@@ -124,8 +139,10 @@ def run_evaluation(
     batch_size: int = 8,
     limit: int | None = None,
     mock: bool = False,
+    model: Any = None,
+    tokenizer: Any = None,
 ) -> dict[str, Any]:
-    """Run full BBQ evaluation pipeline."""
+    """Run full BBQ evaluation pipeline (on ``model``/``tokenizer`` if given, see Evaluator)."""
     cfg = load_config()
 
     if output_dir is None:
@@ -148,7 +165,9 @@ def run_evaluation(
         gender_types=gender_types,
         limit=limit,
     )
-    evaluator = Evaluator(model_name_or_path=model_name_or_path, mock=mock)
+    evaluator = Evaluator(
+        model_name_or_path=model_name_or_path, mock=mock, model=model, tokenizer=tokenizer
+    )
 
     evaluated_records: list[dict[str, Any]] = []
     logger.info("Evaluating %d items with batch size %d...", len(items), batch_size)

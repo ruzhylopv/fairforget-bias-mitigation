@@ -485,7 +485,8 @@ def seed_everything(seed):
     np.random.seed(seed)
 
 
-def get_parser():
+def get_parser(require_model=False):
+    """CLI parser; ``require_model=True`` drops the zephyr default and makes the model mandatory."""
     parser = argparse.ArgumentParser()
 
     # -------------------------------------------------------------
@@ -495,7 +496,8 @@ def get_parser():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="HuggingFaceH4/zephyr-7b-beta",
+        required=require_model,
+        default=None if require_model else "HuggingFaceH4/zephyr-7b-beta",
         help="Short name from config/default.yaml (e.g. lapa-12b-instruct), local path, or hub id.",
     )
 

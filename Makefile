@@ -1,4 +1,4 @@
-.PHONY: setup test lint format env smoke submit evaluate jupyter tunnel jobs watch
+.PHONY: setup test lint format env smoke submit evaluate unlearn-eval jupyter tunnel jobs watch
 
 # ---- Laptop -------------------------------------------------------------
 
@@ -51,6 +51,16 @@ evaluate:
 	$(MAKE) submit PURPOSE="eval: BBQ on $(MODEL)" \
 		CMD="python -m evaluation.bbq.evaluate --model_name_or_path $(MODEL)$(if $(GENDER_TYPES), --gender_types $(GENDER_TYPES))$(if $(EXTRA_ARGS), $(EXTRA_ARGS))" \
 		JOB_TIME=$(or $(JOB_TIME),01:00:00)
+
+# Adaptive RMU (split, words, beta 1, lr 5e-4, alpha 5, layer 32) + BBQ eval of the result,
+# in one job (see docs/unlearn_eval.md). MODEL defaults to lapa-12b-instruct (set above).
+#   make unlearn-eval MODEL=qwen3-8b
+#   make unlearn-eval MODEL=gemma3-12b-it EXTRA_ARGS="--no-save_model"
+# Optional: JOB_TIME=02:00:00 (default), EXTRA_ARGS="..." (any rmu.unlearn / eval option)
+unlearn-eval:
+	$(MAKE) submit PURPOSE="unlearn+eval: adaptive RMU + BBQ on $(MODEL)" \
+		CMD="python -m evaluation.unlearn_eval --model_name_or_path $(MODEL)$(if $(EXTRA_ARGS), $(EXTRA_ARGS))" \
+		JOB_TIME=$(or $(JOB_TIME),02:00:00)
 
 # JupyterLab on a GPU node; the job log tells you how to connect.
 jupyter:

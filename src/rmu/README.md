@@ -76,12 +76,15 @@ RES=/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/results/pilot-<id>
 mkdir -p $RES && cp $RUN/job.txt $RUN/lapa-*/losses.csv $RES/
 ```
 
-### 7. Evaluate before and after (BBQ, not implemented yet)
+### 7. Evaluate before and after (BBQ)
 
-The same evaluation runs on both models; only the model argument differs:
+`make evaluate MODEL=<short name or path>` runs BBQ on any model; only the model argument differs:
 
-- before: `--model_name_or_path lapa-12b-instruct`
-- after: `--model_name_or_path $RUN/lapa-12b-instruct_alpha-100_batches-257_layer-7`
+- before: `MODEL=lapa-12b-instruct` (baselines already in `results/bbq-eval/`)
+- after: `MODEL=$RUN/lapa-12b-instruct_alpha-100_batches-257_layer-7`
+
+To unlearn (adaptive RMU) and evaluate in one job, use `make unlearn-eval MODEL=...`; see
+[`docs/unlearn_eval.md`](../../docs/unlearn_eval.md).
 
 ## Open issues
 
