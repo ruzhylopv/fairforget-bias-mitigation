@@ -1,5 +1,6 @@
 """Source code copied from https://github.com/centerforaisafety/wmdp. with slight adjustments"""
 
+import argparse
 import csv
 from pathlib import Path
 
@@ -45,12 +46,36 @@ def loss_positions(inputs, mode):
         "all":   every position, including padding and BOS (original WMDP behaviour).
         "words": same as ``words``. BOS has huge activations that are identical in every
                  sentence and otherwise dominate the MSE.
+        "diff":  same as ``words`` here; run_rmu then narrows the forget mask with
+                 ``from_first_difference``.
     Removes special_tokens_mask from inputs, because the model doesn't accept it.
     """
     special = inputs.pop("special_tokens_mask").bool()
     words = inputs["attention_mask"].bool() & ~special
     keep = torch.ones_like(words) if mode == "all" else words
     return keep, words
+
+
+def from_first_difference(ids, words, other_ids, other_words):
+    """[B, T] mask of the word tokens of ``ids`` from the first one that differs from the
+    paired sentence (same row of ``other_ids``) to the end.
+
+    For a stereotype / anti-stereotype pair ("The caring mother ..." vs "The uncaring
+    mother ...") this drops the shared prefix: with causal attention its activations are
+    identical in both sentences, so the forget and retain losses would pull them in
+    opposite directions. Identical sentences keep only their last word.
+    """
+    keep = torch.zeros_like(words)
+    for row in range(ids.shape[0]):
+        positions = words[row].nonzero().squeeze(1)
+        mine = ids[row][words[row]].tolist()
+        theirs = other_ids[row][other_words[row]].tolist()
+        first = next(
+            (i for i, (a, b) in enumerate(zip(mine, theirs)) if a != b),
+            min(len(mine), len(theirs)),
+        )
+        keep[row, positions[min(first, len(mine) - 1) :]] = True
+    return keep
 
 
 def masked_mse(activations, target, keep):
@@ -136,7 +161,12 @@ def run_rmu(
     forget_data_list,
     retain_data_list,
     args,
+    save_model=True,
 ):
+    """Train, write losses.csv (and the model unless ``save_model=False``) to output_path.
+
+    Returns the losses.csv rows as a list of dicts.
+    """
     rmu_config = vars(args)
 
     print("==== RMU Config ====")
@@ -195,6 +225,7 @@ def run_rmu(
     path = output_path(args, num_batches)
     path.mkdir(parents=True, exist_ok=True)
     loss_log = LossLog(path / "losses.csv")
+    rows = []
     print(f"Logging losses to {path / 'losses.csv'}")
 
     truncation_side = tokenizer.truncation_side
@@ -212,7 +243,7 @@ def run_rmu(
                 retain_batch = retain_data_list[idx]
 
                 # ---------------------------------------------------------
-                # Unlearning loss
+                # Tokenize
                 # ---------------------------------------------------------
 
                 unlearn_inputs = tokenizer(
@@ -224,6 +255,32 @@ def run_rmu(
                     return_special_tokens_mask=True,
                 ).to(updated_model.device)
                 unlearn_keep, unlearn_words = loss_positions(unlearn_inputs, args.loss_positions)
+
+                retain_inputs = tokenizer(
+                    [item["sentence"] for item in retain_batch],
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=args.max_length,
+                    return_special_tokens_mask=True,
+                ).to(updated_model.device)
+                retain_keep, retain_words = loss_positions(retain_inputs, args.loss_positions)
+
+                # Positions the shrink/rotation columns of losses.csv are measured on.
+                forget_stat_positions, retain_stat_positions = unlearn_words, retain_words
+                if args.loss_positions == "diff":
+                    # Forget loss only from the first token that differs from the paired
+                    # anti-stereotype sentence; the retain loss keeps every word, so the
+                    # shared prefix is only ever pulled back to the original model.
+                    pair = (unlearn_inputs["input_ids"], unlearn_words)
+                    other = (retain_inputs["input_ids"], retain_words)
+                    unlearn_keep = from_first_difference(*pair, *other)
+                    forget_stat_positions = unlearn_keep
+                    retain_stat_positions = from_first_difference(*other, *pair)
+
+                # ---------------------------------------------------------
+                # Unlearning loss
+                # ---------------------------------------------------------
 
                 updated_forget_activations = forward_with_cache(
                     updated_model,
@@ -255,16 +312,6 @@ def run_rmu(
                 # ---------------------------------------------------------
                 # Retain loss
                 # ---------------------------------------------------------
-
-                retain_inputs = tokenizer(
-                    [item["sentence"] for item in retain_batch],
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                    max_length=args.max_length,
-                    return_special_tokens_mask=True,
-                ).to(updated_model.device)
-                retain_keep, retain_words = loss_positions(retain_inputs, args.loss_positions)
 
                 updated_retain_activations = forward_with_cache(
                     updated_model,
@@ -327,13 +374,14 @@ def run_rmu(
                     ).item()
                     # Did the activations shrink or rotate towards u? Retain shows whether the
                     # same change also hits retain data (i.e. whether the edit is selective).
+                    # With "diff" both are measured after the first differing token.
                     row.update(
                         change_stats(
                             "forget",
                             updated_forget_activations,
                             frozen_forget_activations,
                             direction,
-                            unlearn_words,
+                            forget_stat_positions,
                         )
                     )
                     row.update(
@@ -342,7 +390,7 @@ def run_rmu(
                             updated_retain_activations,
                             frozen_retain_activations,
                             direction,
-                            retain_words,
+                            retain_stat_positions,
                         )
                     )
                     # Lowest per-sentence cosine to the original model: one sentence or the
@@ -352,7 +400,8 @@ def run_rmu(
                         frozen_forget_activations.float(),
                         dim=-1,
                     )
-                    sentence_cos = (word_cos * unlearn_words).sum(1) / unlearn_words.sum(1)
+                    per_sentence = (word_cos * forget_stat_positions).sum(1)
+                    sentence_cos = per_sentence / forget_stat_positions.sum(1)
                     row["forget_cos_min"] = sentence_cos.min().item()
                     row["forget_ids"] = ";".join(item["id"] for item in unlearn_batch)
 
@@ -410,6 +459,7 @@ def run_rmu(
                     )
 
                 loss_log.write(row)
+                rows.append(row)
                 pbar.update(1)
 
     tokenizer.truncation_side = truncation_side
@@ -420,15 +470,22 @@ def run_rmu(
     # Save model
     # -------------------------------------------------------------
 
-    updated_model.save_pretrained(path)
-    tokenizer.save_pretrained(path)
+    if save_model:
+        updated_model.save_pretrained(path)
+        tokenizer.save_pretrained(path)
+        print(f"Saved model to {path}")
 
-    print(f"Saved model to {path}")
+    return rows
 
 
-def get_args():
-    import argparse
+def seed_everything(seed):
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
+
+def get_parser():
     parser = argparse.ArgumentParser()
 
     # -------------------------------------------------------------
@@ -552,10 +609,12 @@ def get_args():
 
     parser.add_argument(
         "--loss_positions",
-        choices=["all", "words"],
+        choices=["all", "words", "diff"],
         default="all",
         help="Positions the losses average over: 'all' (original WMDP, includes padding and "
-        "BOS) or 'words' (real tokens only; BOS's huge activations otherwise dominate).",
+        "BOS), 'words' (real tokens only; BOS's huge activations otherwise dominate) or "
+        "'diff' (like 'words', but the forget loss starts at the first token that differs "
+        "from the paired anti-stereotype sentence; needs --no-split).",
     )
 
     parser.add_argument(
@@ -569,7 +628,17 @@ def get_args():
         action="store_true",
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+def get_args(parser=None, argv=None):
+    """Parse the CLI (``parser`` defaults to get_parser()) and turn the list options into lists."""
+    parser = parser or get_parser()
+    args = parser.parse_args(argv)
+
+    if args.loss_positions == "diff" and args.split:
+        # Only --no-split pairs forget sentence i with the anti-stereotype of the same item.
+        parser.error("--loss_positions diff needs --no-split")
 
     args.steering_coeff_list = [
         float(c)
@@ -599,10 +668,7 @@ if __name__ == "__main__":
     # Reproducibility
     # -------------------------------------------------------------
 
-    torch.cuda.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    seed_everything(args.seed)
 
     # -------------------------------------------------------------
     # Load models

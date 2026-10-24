@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib import ticker
 
@@ -150,6 +151,79 @@ def plot_losses(losses: pd.DataFrame, title: str = "", save_to=None):
 
     axes[-1].set_xlabel("Training step", color=MUTED, fontsize=9)
     axes[-1].margins(x=0.08)  # room for the end-of-line labels
+    if title:
+        fig.suptitle(title, x=0.01, ha="left", fontsize=13, color=INK)
+    fig.tight_layout()
+    if save_to:
+        fig.savefig(Path(save_to), dpi=150, facecolor=SURFACE)
+    return fig
+
+
+# Layer sweep: the two terms of the forget-loss drop. Violet = rotation towards u (the
+# intended misdirection), yellow = shrinkage. Retain bars use the same colours, lighter.
+SHRINKAGE = "#eda100"
+ROTATION = "#6250d6"
+
+
+def plot_layer_sweep(sweep: pd.DataFrame, title: str = "", retain: bool = True, save_to=None):
+    """Stacked bar per layer from sweep.csv: shrinkage (1 - k^2)/2 at the bottom, rotation
+    k*cos(theta) on top, so the bar height approximates the relative drop 1 - L/L0. A dot
+    marks the measured drop. With ``retain`` a thinner, lighter bar shows the same terms
+    on retain data next to each forget bar.
+    """
+    sweep = sweep.sort_values("layer").reset_index(drop=True)
+    x = np.arange(len(sweep))
+    width = 0.38 if retain else 0.6
+    forget_x = x - width / 2 if retain else x
+
+    fig, ax = plt.subplots(figsize=(max(7, 0.65 * len(sweep) + 2), 4.2), facecolor=SURFACE)
+    _style(ax, "Relative drop of the forget loss, 1 − L / L₀", log=False)
+    ax.yaxis.set_major_formatter(ticker.PercentFormatter(1.0, decimals=0))
+
+    def bars(xs, prefix, w, alpha, label_suffix):
+        # Surface-coloured edges give the 2px gap between stacked segments and neighbours.
+        style = dict(width=w, edgecolor=SURFACE, linewidth=1.5, alpha=alpha)
+        ax.bar(
+            xs,
+            sweep[f"{prefix}_shrinkage"],
+            color=SHRINKAGE,
+            label=f"shrinkage{label_suffix}",
+            **style,
+        )
+        ax.bar(
+            xs,
+            sweep[f"{prefix}_rotation"],
+            bottom=sweep[f"{prefix}_shrinkage"],
+            color=ROTATION,
+            label=f"rotation{label_suffix}",
+            **style,
+        )
+
+    bars(forget_x, "forget", width, 1.0, " (forget)" if retain else "")
+    if retain:
+        bars(x + width / 2, "retain", width * 0.6, 0.4, " (retain)")
+    ax.scatter(
+        forget_x,
+        sweep["forget_drop"],
+        s=36,
+        color=INK,
+        edgecolor=SURFACE,
+        linewidth=1.5,
+        zorder=3,
+        label="measured drop (forget)",
+    )
+    ax.axhline(0, color=MUTED, linewidth=0.8)
+    ax.set_xticks(x, [str(layer) for layer in sweep["layer"]])
+    ax.set_xlabel("Hooked layer (trained: layer − 2 … layer)", color=MUTED, fontsize=9)
+    # Below the axis: real bars can reach any height, so no corner is safe.
+    ax.legend(
+        frameon=False,
+        fontsize=9,
+        labelcolor=MUTED,
+        ncols=3,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.16),
+    )
     if title:
         fig.suptitle(title, x=0.01, ha="left", fontsize=13, color=INK)
     fig.tight_layout()
