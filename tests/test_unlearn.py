@@ -90,6 +90,46 @@ def test_all_mode_keeps_every_position_but_still_reports_words():
     assert words.tolist() == [[False, False, True, True], [False, True, True, True]]
 
 
+def test_diff_mode_marks_every_token_of_a_differing_word():
+    # "The caring mother" (tokens: The, car, ing, mother) vs "The uncaring mother"; the other
+    # sentence also ends its word in "ing", which must not exempt "ing" here.
+    texts = ["The caring mother"]
+    offsets = torch.tensor([[[0, 0], [0, 3], [3, 7], [7, 10], [10, 17]]])
+    words = torch.tensor([[0, 1, 1, 1, 1]]).bool()
+
+    keep = unlearn.differing_tokens(texts, offsets, words, ["The uncaring mother"])
+
+    assert keep.tolist() == [[False, False, True, True, False]]
+
+
+def test_diff_mode_handles_left_padding_punctuation_and_identical_sentences():
+    # [pad, Jane, is, a, rival, .] (padded) and [Jane, is, a, rival, .]
+    texts = ["Jane is a rival.", "Jane is a rival."]
+    offsets = torch.tensor(
+        [
+            [[0, 0], [0, 4], [4, 7], [7, 9], [9, 15], [15, 16]],
+            [[0, 4], [4, 7], [7, 9], [9, 15], [15, 16], [0, 0]],
+        ]
+    )
+    words = torch.tensor([[0, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0]]).bool()
+
+    keep = unlearn.differing_tokens(texts, offsets, words, ["Jane is a friend.", texts[1]])
+
+    assert keep.tolist() == [
+        [False, False, False, False, True, False],  # only "rival", not the shared "."
+        [False, False, False, False, True, False],  # identical: last word ("." is the last)
+    ]
+
+
+def test_diff_mode_needs_no_split(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["unlearn", "--loss_positions", "diff"])
+    with pytest.raises(SystemExit):
+        unlearn.get_args()
+
+    monkeypatch.setattr("sys.argv", ["unlearn", "--loss_positions", "diff", "--no-split"])
+    assert unlearn.get_args().loss_positions == "diff"
+
+
 def test_masked_mse_with_everything_kept_equals_mse_loss():
     activations = torch.randn(2, 4, 8)
     target = torch.randn(1, 1, 8)

@@ -2,6 +2,8 @@
 
 import argparse
 import csv
+import difflib
+import re
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +40,25 @@ class LossLog:
         self.file.close()
 
 
+def tokenize(tokenizer, texts, args, device):
+    """Tokenize a batch; returns ``(inputs, offsets)``.
+
+    ``offsets`` ([B, T, 2] character spans) is only computed for ``--loss_positions diff``
+    and is None otherwise. It is removed from ``inputs``, because the model doesn't accept it.
+    """
+    inputs = tokenizer(
+        texts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=args.max_length,
+        return_special_tokens_mask=True,
+        return_offsets_mapping=args.loss_positions == "diff",
+    )
+    offsets = inputs.pop("offset_mapping", None)
+    return inputs.to(device), offsets
+
+
 def loss_positions(inputs, mode):
     """Return ``(keep, words)``, two [B, T] bool masks.
 
@@ -46,12 +67,58 @@ def loss_positions(inputs, mode):
         "all":   every position, including padding and BOS (original WMDP behaviour).
         "words": same as ``words``. BOS has huge activations that are identical in every
                  sentence and otherwise dominate the MSE.
+        "diff":  same as ``words`` here; run_rmu then narrows the forget mask to the tokens
+                 of the words that differ from the paired sentence (``differing_tokens``).
     Removes special_tokens_mask from inputs, because the model doesn't accept it.
     """
     special = inputs.pop("special_tokens_mask").bool()
     words = inputs["attention_mask"].bool() & ~special
     keep = torch.ones_like(words) if mode == "all" else words
     return keep, words
+
+
+def token_word_indices(text, offsets):
+    """Index of the word each token belongs to, for ``text`` split into words and punctuation.
+
+    ``offsets`` is the [T, 2] character span of each token. A token belongs to the word that
+    holds its last character, so a leading space (sentencepiece "▁") doesn't matter.
+    Returns ``(words, index)``: the word strings and one word index per token (-1 if none).
+    """
+    spans = [(m.group(), m.start(), m.end()) for m in re.finditer(r"\w+|[^\w\s]", text)]
+    char_to_word = {}
+    for i, (_, start, end) in enumerate(spans):
+        char_to_word.update({c: i for c in range(start, end)})
+    index = [char_to_word.get(end - 1, -1) for _, end in offsets.tolist()]
+    return [word for word, _, _ in spans], index
+
+
+def differing_tokens(texts, offsets, words, other_texts):
+    """[B, T] mask of the tokens of every word of ``texts`` that has no match in the paired
+    sentence (same row of ``other_texts``).
+
+    Words (and punctuation marks) are aligned with difflib, so an inserted or replaced word
+    shifts nothing, and all tokens of a differing word are marked even when they also occur
+    in the other word: "The caring mother ..." vs "The uncaring mother ..." marks every
+    token of "caring" / "uncaring" and nothing else. ``offsets`` is [B, T, 2] and ``words``
+    the [B, T] mask of real tokens. Identical sentences keep only their last word, so every
+    row has at least one position.
+    """
+    keep = torch.zeros_like(words)
+    for row, (text, other_text) in enumerate(zip(texts, other_texts)):
+        mine, index = token_word_indices(text, offsets[row])
+        theirs = re.findall(r"\w+|[^\w\s]", other_text)
+        differs = [True] * len(mine)
+        for block in difflib.SequenceMatcher(
+            None, mine, theirs, autojunk=False
+        ).get_matching_blocks():
+            differs[block.a : block.a + block.size] = [False] * block.size
+        # Truncation can cut off the last words, so only words that still have tokens count.
+        present = {i for i, w in zip(index, words[row].tolist()) if w and i >= 0}
+        if not any(differs[i] for i in present):
+            differs[max(present)] = True
+        for t, (i, w) in enumerate(zip(index, words[row].tolist())):
+            keep[row, t] = bool(w) and i >= 0 and differs[i]
+    return keep
 
 
 def masked_mse(activations, target, keep):
@@ -212,25 +279,44 @@ def run_rmu(
 
         with tqdm.tqdm(total=num_batches) as pbar:
             for idx in range(num_batches):
-
                 # There is one topic, and each list element is one batch.
                 topic_idx = 0
                 unlearn_batch = forget_data_list[idx]
                 retain_batch = retain_data_list[idx]
 
                 # ---------------------------------------------------------
-                # Unlearning loss
+                # Tokenize
                 # ---------------------------------------------------------
 
-                unlearn_inputs = tokenizer(
-                    [item["sentence"] for item in unlearn_batch],
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                    max_length=args.max_length,
-                    return_special_tokens_mask=True,
-                ).to(updated_model.device)
+                unlearn_texts = [item["sentence"] for item in unlearn_batch]
+                unlearn_inputs, unlearn_offsets = tokenize(
+                    tokenizer, unlearn_texts, args, updated_model.device
+                )
                 unlearn_keep, unlearn_words = loss_positions(unlearn_inputs, args.loss_positions)
+
+                retain_texts = [item["sentence"] for item in retain_batch]
+                retain_inputs, retain_offsets = tokenize(
+                    tokenizer, retain_texts, args, updated_model.device
+                )
+                retain_keep, retain_words = loss_positions(retain_inputs, args.loss_positions)
+
+                # Positions the shrink/rotation columns of losses.csv are measured on.
+                forget_stat_positions, retain_stat_positions = unlearn_words, retain_words
+                if args.loss_positions == "diff":
+                    # Forget loss only on the tokens of the words that differ from the
+                    # paired anti-stereotype sentence; the retain loss keeps every token, so
+                    # the shared tokens are only ever pulled back to the original model.
+                    unlearn_keep = differing_tokens(
+                        unlearn_texts, unlearn_offsets, unlearn_words, retain_texts
+                    )
+                    forget_stat_positions = unlearn_keep
+                    retain_stat_positions = differing_tokens(
+                        retain_texts, retain_offsets, retain_words, unlearn_texts
+                    )
+
+                # ---------------------------------------------------------
+                # Unlearning loss
+                # ---------------------------------------------------------
 
                 updated_forget_activations = forward_with_cache(
                     updated_model,
@@ -262,16 +348,6 @@ def run_rmu(
                 # ---------------------------------------------------------
                 # Retain loss
                 # ---------------------------------------------------------
-
-                retain_inputs = tokenizer(
-                    [item["sentence"] for item in retain_batch],
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                    max_length=args.max_length,
-                    return_special_tokens_mask=True,
-                ).to(updated_model.device)
-                retain_keep, retain_words = loss_positions(retain_inputs, args.loss_positions)
 
                 updated_retain_activations = forward_with_cache(
                     updated_model,
@@ -334,13 +410,14 @@ def run_rmu(
                     ).item()
                     # Did the activations shrink or rotate towards u? Retain shows whether the
                     # same change also hits retain data (i.e. whether the edit is selective).
+                    # With "diff" both are measured on the tokens of the differing words.
                     row.update(
                         change_stats(
                             "forget",
                             updated_forget_activations,
                             frozen_forget_activations,
                             direction,
-                            unlearn_words,
+                            forget_stat_positions,
                         )
                     )
                     row.update(
@@ -349,7 +426,7 @@ def run_rmu(
                             updated_retain_activations,
                             frozen_retain_activations,
                             direction,
-                            retain_words,
+                            retain_stat_positions,
                         )
                     )
                     # Lowest per-sentence cosine to the original model: one sentence or the
@@ -359,7 +436,8 @@ def run_rmu(
                         frozen_forget_activations.float(),
                         dim=-1,
                     )
-                    sentence_cos = (word_cos * unlearn_words).sum(1) / unlearn_words.sum(1)
+                    per_sentence = (word_cos * forget_stat_positions).sum(1)
+                    sentence_cos = per_sentence / forget_stat_positions.sum(1)
                     row["forget_cos_min"] = sentence_cos.min().item()
                     row["forget_ids"] = ";".join(item["id"] for item in unlearn_batch)
 
@@ -387,14 +465,8 @@ def run_rmu(
                     )
                     row["unlearn_cosine_sim"] = unlearn_cosine.item()
                     row["retain_cosine_sim"] = retain_cosine.item()
-                    print(
-                        f"unlearn_cosine_sim="
-                        f"{unlearn_cosine.item()}"
-                    )
-                    print(
-                        f"retain_cosine_sim="
-                        f"{retain_cosine.item()}"
-                    )
+                    print(f"unlearn_cosine_sim={unlearn_cosine.item()}")
+                    print(f"retain_cosine_sim={retain_cosine.item()}")
                     print(
                         "updated_forget_activations.norm={}".format(
                             updated_forget_activations.norm(dim=-1).mean(dim=1).mean().item()
@@ -569,10 +641,12 @@ def get_parser(require_model=False):
 
     parser.add_argument(
         "--loss_positions",
-        choices=["all", "words"],
+        choices=["all", "words", "diff"],
         default="all",
         help="Positions the losses average over: 'all' (original WMDP, includes padding and "
-        "BOS) or 'words' (real tokens only; BOS's huge activations otherwise dominate).",
+        "BOS), 'words' (real tokens only; BOS's huge activations otherwise dominate) or "
+        "'diff' (like 'words', but the forget loss covers only the words that differ "
+        "from the paired anti-stereotype sentence; needs --no-split).",
     )
 
     parser.add_argument(
@@ -594,20 +668,15 @@ def get_args(parser=None, argv=None):
     parser = parser or get_parser()
     args = parser.parse_args(argv)
 
-    args.steering_coeff_list = [
-        float(c)
-        for c in args.steering_coeffs.split(",")
-    ]
+    if args.loss_positions == "diff" and args.split:
+        # Only --no-split pairs forget sentence i with the anti-stereotype of the same item.
+        parser.error("--loss_positions diff needs --no-split")
 
-    args.alpha = [
-        float(c)
-        for c in args.alpha.split(",")
-    ]
+    args.steering_coeff_list = [float(c) for c in args.steering_coeffs.split(",")]
 
-    args.layer_ids = [
-        int(layer_id)
-        for layer_id in args.layer_ids.split(",")
-    ]
+    args.alpha = [float(c) for c in args.alpha.split(",")]
+
+    args.layer_ids = [int(layer_id) for layer_id in args.layer_ids.split(",")]
 
     args.param_names = args.param_names.split(",")
 
@@ -615,7 +684,6 @@ def get_args(parser=None, argv=None):
 
 
 if __name__ == "__main__":
-
     args = get_args()
 
     # -------------------------------------------------------------
@@ -628,13 +696,9 @@ if __name__ == "__main__":
     # Load models
     # -------------------------------------------------------------
 
-    frozen_model, tokenizer = load_model(
-        args.model_name_or_path
-    )
+    frozen_model, tokenizer = load_model(args.model_name_or_path)
 
-    updated_model, _ = load_model(
-        args.model_name_or_path
-    )
+    updated_model, _ = load_model(args.model_name_or_path)
 
     # -------------------------------------------------------------
     # Load StereoSet
