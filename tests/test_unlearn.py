@@ -48,6 +48,35 @@ def test_output_path_has_no_brackets_in_alpha(monkeypatch, tmp_path):
     assert unlearn.output_path(args(beta=1.0), 257).name.endswith("_layer-7_beta-1_positions-words")
 
 
+def test_output_path_names_non_default_corpora(monkeypatch, tmp_path):
+    monkeypatch.setattr(unlearn, "run_dir", lambda: tmp_path)
+
+    default = args(forget_corpora=unlearn.DEFAULT_FORGET, retain_corpora=unlearn.DEFAULT_RETAIN)
+    assert unlearn.output_path(default, 1).name.endswith("_positions-words")
+    custom = args(retain_corpora="stereoset:unrelated:gender,race")
+    assert unlearn.output_path(custom, 1).name.endswith(
+        "_positions-words_retain-unrelated-gender+race"
+    )
+    from_file = args(forget_corpora="data/my forget.txt")
+    assert unlearn.output_path(from_file, 1).name.endswith("_forget-my-forget")
+
+
+def test_diff_positions_need_paired_stereoset_corpora(monkeypatch):
+    argv = ["unlearn", "--loss_positions", "diff", "--no-split"]
+    monkeypatch.setattr("sys.argv", [*argv, "--retain_corpora", "stereoset:unrelated:gender"])
+    assert unlearn.get_args().retain_corpora == "stereoset:unrelated:gender"
+
+    monkeypatch.setattr("sys.argv", [*argv, "--retain_corpora", "stereoset:anti-stereotype:race"])
+    with pytest.raises(SystemExit):
+        unlearn.get_args()
+
+
+def test_bad_corpus_spec_is_a_cli_error(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["unlearn", "--forget_corpora", "stereoset:biased"])
+    with pytest.raises(SystemExit):
+        unlearn.get_args()
+
+
 def test_output_dir_overrides_default(tmp_path):
     assert unlearn.output_path(args(output_dir=str(tmp_path / "x")), 1) == tmp_path / "x"
 

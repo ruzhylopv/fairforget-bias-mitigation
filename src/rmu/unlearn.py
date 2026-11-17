@@ -16,7 +16,7 @@ from rmu.utils import (
     get_params,
     load_model,
 )
-from rmu.data import get_stereoset_data
+from rmu.data import DEFAULT_FORGET, DEFAULT_RETAIN, corpus_name, is_paired, load_corpora
 from rmu.config import run_dir
 
 
@@ -151,7 +151,20 @@ def output_path(args, num_batches):
         f"_layer-{args.layer_id}"
         + (f"_beta-{args.beta:g}" if args.beta is not None else "")
         + f"_positions-{args.loss_positions}"
+        + corpus_tag(args)
     )
+
+
+def corpus_tag(args):
+    """Folder-name suffix for non-default corpora ("" for the StereoSet gender defaults)."""
+    forget = getattr(args, "forget_corpora", None) or DEFAULT_FORGET
+    retain = getattr(args, "retain_corpora", None) or DEFAULT_RETAIN
+    tag = ""
+    if forget != DEFAULT_FORGET:
+        tag += f"_forget-{corpus_name(forget)}"
+    if retain != DEFAULT_RETAIN:
+        tag += f"_retain-{corpus_name(retain)}"
+    return tag
 
 
 def run_rmu(
@@ -541,20 +554,24 @@ def get_parser(require_model=False):
         "--split",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Use separate StereoSet halves for forget and retain (--no-split uses all items).",
-    )
-
-    # Optional original arguments
-    parser.add_argument(
-        "--retain_corpora",
-        type=str,
-        default=None,
+        help="StereoSet items both corpora could use go to forget or retain, never both "
+        "(halves). --no-split uses all items for both. Has no effect on file corpora.",
     )
 
     parser.add_argument(
         "--forget_corpora",
         type=str,
-        default=None,
+        default=DEFAULT_FORGET,
+        help="Sentences to forget: stereoset:<label>[:<bias_types>] (label stereotype, "
+        "anti-stereotype or unrelated; bias types comma-separated, default gender, 'all' for "
+        "every type) or a .txt/.jsonl/.json/.csv/.tsv sentence file. See rmu.data.",
+    )
+
+    parser.add_argument(
+        "--retain_corpora",
+        type=str,
+        default=DEFAULT_RETAIN,
+        help="Sentences to retain; same format as --forget_corpora.",
     )
 
     # -------------------------------------------------------------
@@ -616,7 +633,8 @@ def get_parser(require_model=False):
         help="Positions the losses average over: 'all' (original WMDP, includes padding and "
         "BOS), 'words' (real tokens only; BOS's huge activations otherwise dominate) or "
         "'diff' (like 'words', but the forget loss starts at the first token that differs "
-        "from the paired anti-stereotype sentence; needs --no-split).",
+        "from the paired retain sentence; needs --no-split and StereoSet forget/retain "
+        "corpora over the same bias types).",
     )
 
     parser.add_argument(
@@ -638,9 +656,20 @@ def get_args(parser=None, argv=None):
     parser = parser or get_parser()
     args = parser.parse_args(argv)
 
-    if args.loss_positions == "diff" and args.split:
-        # Only --no-split pairs forget sentence i with the anti-stereotype of the same item.
-        parser.error("--loss_positions diff needs --no-split")
+    try:
+        paired = is_paired(args.forget_corpora, args.retain_corpora)
+    except ValueError as error:
+        parser.error(str(error))
+    if args.loss_positions == "diff":
+        # Only --no-split with matching StereoSet corpora pairs forget sentence i with a
+        # sentence of the same item.
+        if args.split:
+            parser.error("--loss_positions diff needs --no-split")
+        if not paired:
+            parser.error(
+                "--loss_positions diff needs StereoSet forget and retain corpora over the same "
+                "bias types with different labels"
+            )
 
     args.steering_coeff_list = [
         float(c)
@@ -685,10 +714,12 @@ if __name__ == "__main__":
     )
 
     # -------------------------------------------------------------
-    # Load StereoSet
+    # Load forget / retain corpora
     # -------------------------------------------------------------
 
-    forget_batches, retain_batches = get_stereoset_data(
+    forget_batches, retain_batches = load_corpora(
+        args.forget_corpora,
+        args.retain_corpora,
         batch_size=args.batch_size,
         split=args.split,
     )

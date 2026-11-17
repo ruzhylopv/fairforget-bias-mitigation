@@ -16,7 +16,7 @@ import torch
 
 from evaluation.bbq.evaluate import run_evaluation
 from rmu.config import repo_path
-from rmu.data import get_stereoset_data
+from rmu.data import load_corpora
 from rmu.unlearn import get_args, get_parser, output_path, run_rmu, seed_everything
 from rmu.utils import load_model
 
@@ -77,8 +77,8 @@ def main(argv=None):
 
     frozen_model, tokenizer = load_model(args.model_name_or_path)
     updated_model, _ = load_model(args.model_name_or_path)
-    forget_batches, retain_batches = get_stereoset_data(
-        batch_size=args.batch_size, split=args.split
+    forget_batches, retain_batches = load_corpora(
+        args.forget_corpora, args.retain_corpora, batch_size=args.batch_size, split=args.split
     )
 
     run_rmu(

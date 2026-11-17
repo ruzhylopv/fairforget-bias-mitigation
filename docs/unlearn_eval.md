@@ -16,6 +16,7 @@ The settings of the oct18 adaptive RMU runs. Any `rmu.unlearn` option overrides 
 | `--alpha` | 5 | retain loss weight |
 | `--layer_id` / `--layer_ids` | 32 / 30,31,32 | hooked layer / layers whose `mlp.down_proj.weight` is trained |
 | `--split` | on | forget = stereotypes of half the items, retain = anti-stereotypes of the other half |
+| `--forget_corpora` / `--retain_corpora` | `stereoset:stereotype:gender` / `stereoset:anti-stereotype:gender` | `stereoset:<label>[:<bias_types>]` (label `stereotype`, `anti-stereotype` or `unrelated`; bias types comma-separated or `all`) or a `.txt`/`.jsonl`/`.json`/`.csv`/`.tsv` sentence file; non-default corpora are added to the run folder name |
 | `--loss_positions` | words | losses over word tokens only (BOS/EOS/padding masked) |
 | `--max_num_batches` | 257 | clamped to all batches: 129 steps with `--split` |
 | `--save_model` | on | `--no-save_model` keeps only losses and eval results |

@@ -20,8 +20,8 @@ import numpy as np
 import torch
 
 from rmu.config import run_dir
-from rmu.data import get_stereoset_data
-from rmu.unlearn import get_args, get_parser, run_rmu, seed_everything
+from rmu.data import load_corpora
+from rmu.unlearn import corpus_tag, get_args, get_parser, run_rmu, seed_everything
 from rmu.utils import get_params, load_model
 
 # Steps at the end of each run the sweep.csv row averages over.
@@ -94,7 +94,7 @@ def restore_params(updated_model, frozen_model, layer_ids, param_names):
 def sweep_dir(args):
     if args.output_dir:
         return Path(args.output_dir)
-    return run_dir() / f"{Path(args.model_name_or_path).name}_layer-sweep"
+    return run_dir() / f"{Path(args.model_name_or_path).name}_layer-sweep{corpus_tag(args)}"
 
 
 def get_sweep_args(argv=None):
@@ -130,8 +130,8 @@ def main(argv=None):
 
     frozen_model, tokenizer = load_model(args.model_name_or_path)
     updated_model, _ = load_model(args.model_name_or_path)
-    forget_batches, retain_batches = get_stereoset_data(
-        batch_size=args.batch_size, split=args.split
+    forget_batches, retain_batches = load_corpora(
+        args.forget_corpora, args.retain_corpora, batch_size=args.batch_size, split=args.split
     )
 
     previous = []
