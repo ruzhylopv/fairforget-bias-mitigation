@@ -1,0 +1,25 @@
+{
+ "argv": [
+  "scripts/tokenization_check.py"
+ ],
+ "transformers": "5.19.0",
+ "tokenizers": {
+  "lapa-12b-instruct": {
+   "source": "lapa-llm/lapa-v0.1.2-instruct",
+   "class": "GemmaTokenizer"
+  },
+  "gemma3-12b-it": {
+   "source": "google/gemma-3-12b-it",
+   "class": "GemmaTokenizer"
+  },
+  "qwen3-8b": {
+   "source": "Qwen/Qwen3-8B",
+   "class": "Qwen2Tokenizer"
+  }
+ },
+ "n_pairs": 8498,
+ "files": [
+  "/home/taras/code/ai/proj/fairforget-bias-mitigation/data/stereoset/raw/test.json",
+  "/home/taras/code/ai/proj/fairforget-bias-mitigation/data/stereoset/raw/dev.json"
+ ]
+}
