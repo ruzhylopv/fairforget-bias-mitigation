@@ -19,6 +19,9 @@ StereoSet intrasentence gender (dev + test), 1,026 pairs = 2,052 sentences. Code
 
 To test steps 3–4 without a GPU, `scripts/make_fake_acts.py` writes the real meta plus Gaussian
 activations with a signal planted at chosen layers (`--signal 20,21,22 --delta 2 --root ...`).
+`scripts/check_fake_probe.py --root ...` then runs a grouped-CV probe per layer with real and
+within-pair-flipped labels: planted layers should be well above 50%, the rest and the flipped
+labels at ≈50%.
 
 ## Files
 
