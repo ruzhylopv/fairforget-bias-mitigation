@@ -10,6 +10,8 @@ paths:
   team_root: /e/project1/e-dev-2026d09-075/fairforget-bias-mitigation
   # Final checkpoints and results worth keeping.
   results_root: /e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/results
+  # RQ2 probing: activations (acts/) and per-model metadata (meta/), see docs/rq2_probing.md.
+  rq2_root: /e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/results/rq2-probing
   # Intermediate checkpoints and logs, one folder per Slurm job. Files older than 90 days are deleted.
   runs_root: /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/runs
   # Shared log of submitted jobs for the grant usage report. (Team-specific)

@@ -3,3 +3,4 @@
 paths:
   models_root: ~/models          # wherever you keep local model folders
   runs_root: runs                # relative paths are resolved from the repo root
+  # rq2_root: ~/rq2-probing      # RQ2 probing activations + meta (several GB per model)
