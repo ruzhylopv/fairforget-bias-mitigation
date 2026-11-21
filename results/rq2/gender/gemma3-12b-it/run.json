@@ -1,0 +1,574 @@
+{
+  "model": "gemma3-12b-it",
+  "bias": "gender",
+  "steps": {
+    "meta": {
+      "date": "2026-11-21T20:40:39",
+      "git_commit": "1a651ae727b0ace05f78b1b28a14e35ec714884c",
+      "slurm_job_id": "3047282",
+      "pairs_csv": "results/tokenization-check-nov17/pairs.csv",
+      "n_rows": 2050,
+      "excluded_items": {
+        "bdccea984366464e4a58c7a257a39abf": "\"A man has testoserone.\" / \"A man has estrogen.\": misspelled, not a meaningful pair"
+      },
+      "dropped_no_context": []
+    },
+    "extract": {
+      "model": "gemma3-12b-it",
+      "model_path": "/e/project1/e-dev-2026d09-075/fairforget/models/gemma-3-12b-it/96b6f1eccf38110c56df3a15bffe176da04bfd80",
+      "model_dtype": "torch.bfloat16",
+      "store_dtype": "float32",
+      "n_rows": 2050,
+      "n_hidden_states": 49,
+      "hidden_size": 3840,
+      "bias": "gender",
+      "batch_size": 1,
+      "limit": null,
+      "meta_source": "/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/results/rq2-probing/gender/gemma3-12b-it/meta.csv",
+      "git_commit": "1a651ae727b0ace05f78b1b28a14e35ec714884c",
+      "torch": "2.9.1+cu128",
+      "transformers": "5.19.0",
+      "python": "3.13.5",
+      "gpu": "NVIDIA GH200 120GB",
+      "date": "2026-11-21T20:44:21",
+      "slurm_job_id": "3047282",
+      "seconds_forward": 163.2,
+      "seconds_total": 188.8,
+      "padding_max_rel_diff": 0.0,
+      "n_decode_mismatches": 4,
+      "decode_mismatches": [
+        {
+          "row": 1806,
+          "word": "protect",
+          "decoded": "protected"
+        },
+        {
+          "row": 1807,
+          "word": "attack",
+          "decoded": "attacked"
+        },
+        {
+          "row": 1132,
+          "word": "encourage",
+          "decoded": "encouraged"
+        },
+        {
+          "row": 1133,
+          "word": "demoralize",
+          "decoded": "demoralized"
+        }
+      ],
+      "examples": [
+        {
+          "row": 132,
+          "word": "female",
+          "tokens": [
+            "▁female"
+          ],
+          "decoded": "female"
+        },
+        {
+          "row": 133,
+          "word": "male",
+          "tokens": [
+            "▁male"
+          ],
+          "decoded": "male"
+        },
+        {
+          "row": 194,
+          "word": "petite",
+          "tokens": [
+            "▁petite"
+          ],
+          "decoded": "petite"
+        },
+        {
+          "row": 195,
+          "word": "strong",
+          "tokens": [
+            "▁strong"
+          ],
+          "decoded": "strong"
+        },
+        {
+          "row": 196,
+          "word": "man",
+          "tokens": [
+            "▁man"
+          ],
+          "decoded": "man"
+        }
+      ],
+      "max_abs": {
+        "first_diff": [
+          20.5,
+          884.0,
+          860.0,
+          672.0,
+          688.0,
+          1544.0,
+          1536.0,
+          2096.0,
+          2976.0,
+          4832.0,
+          5344.0,
+          8960.0,
+          10816.0,
+          12480.0,
+          20224.0,
+          25856.0,
+          31616.0,
+          33024.0,
+          40448.0,
+          50688.0,
+          58368.0,
+          61184.0,
+          65536.0,
+          69120.0,
+          72704.0,
+          79872.0,
+          83968.0,
+          84480.0,
+          84992.0,
+          85504.0,
+          84992.0,
+          84992.0,
+          87040.0,
+          89600.0,
+          94208.0,
+          102912.0,
+          105984.0,
+          114176.0,
+          119808.0,
+          124928.0,
+          132096.0,
+          145408.0,
+          144384.0,
+          149504.0,
+          161792.0,
+          172032.0,
+          182272.0,
+          196608.0,
+          60.25
+        ],
+        "last_subtok": [
+          20.5,
+          840.0,
+          860.0,
+          880.0,
+          688.0,
+          1856.0,
+          1744.0,
+          2448.0,
+          3360.0,
+          5152.0,
+          5792.0,
+          9280.0,
+          10816.0,
+          12480.0,
+          20480.0,
+          26112.0,
+          31616.0,
+          33280.0,
+          40704.0,
+          50688.0,
+          58368.0,
+          61696.0,
+          65536.0,
+          69120.0,
+          72704.0,
+          79872.0,
+          83968.0,
+          84480.0,
+          84992.0,
+          85504.0,
+          84992.0,
+          84992.0,
+          87040.0,
+          89600.0,
+          94208.0,
+          102912.0,
+          105984.0,
+          114176.0,
+          119808.0,
+          124928.0,
+          132096.0,
+          145408.0,
+          144384.0,
+          150528.0,
+          163840.0,
+          176128.0,
+          182272.0,
+          196608.0,
+          60.25
+        ]
+      },
+      "ell_mean_stereo": -10.105311590531251,
+      "ell_mean_anti": -12.554245657048574,
+      "ell_min": -36.041046142578125,
+      "ell_max": -0.035003479570150375,
+      "ss_attribute_word": 0.6848780487804879,
+      "n_pairs_tied": 6
+    },
+    "check_extraction": {
+      "date": "2026-11-21T20:44:43",
+      "git_commit": "1a651ae727b0ace05f78b1b28a14e35ec714884c",
+      "slurm_job_id": "3047282",
+      "gpu": true,
+      "seed": 0,
+      "ok": true,
+      "checks": {
+        "5 files": "PASS",
+        "4 positions agree": "PASS",
+        "3 layer 0": "PASS",
+        "1 single vs saved": "PASS",
+        "2 shared prefix": "PASS"
+      }
+    },
+    "pipeline extract": {
+      "date": "2026-11-21T20:44:44",
+      "git_commit": "1a651ae727b0ace05f78b1b28a14e35ec714884c",
+      "slurm_job_id": "3047282",
+      "steps": {
+        "meta": "ran (0.0 min)",
+        "extract": "ran (3.7 min)",
+        "gate 1": "ran (0.4 min)"
+      },
+      "result": "ok"
+    },
+    "probe": {
+      "model": "gemma3-12b-it",
+      "bias": "gender",
+      "n_rows": 2050,
+      "positions": [
+        "first_diff",
+        "last_subtok"
+      ],
+      "layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48
+      ],
+      "n_layers": 48,
+      "grid": [
+        0.0001,
+        0.001,
+        0.01,
+        0.1,
+        1.0
+      ],
+      "inner_scoring": "neg_log_loss",
+      "baseline_C": 10000.0,
+      "n_jobs": 98,
+      "seconds_total": 152.5,
+      "date": "2026-11-21T22:14:00",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047628",
+      "summary": "/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/bias-mitigation-ruzhylo1/results/rq2/gender/gemma3-12b-it/summary.csv"
+    },
+    "controls null": {
+      "date": "2026-11-21T22:21:01",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047628",
+      "positions": [
+        "first_diff",
+        "last_subtok"
+      ],
+      "layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48
+      ],
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "controls cgrid": {
+      "date": "2026-11-21T22:21:16",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047628",
+      "probes": [
+        [
+          "first_diff",
+          0
+        ],
+        [
+          "first_diff",
+          1
+        ],
+        [
+          "first_diff",
+          2
+        ],
+        [
+          "first_diff",
+          3
+        ],
+        [
+          "first_diff",
+          4
+        ],
+        [
+          "first_diff",
+          5
+        ],
+        [
+          "first_diff",
+          6
+        ],
+        [
+          "first_diff",
+          7
+        ],
+        [
+          "last_subtok",
+          0
+        ],
+        [
+          "last_subtok",
+          1
+        ],
+        [
+          "last_subtok",
+          2
+        ],
+        [
+          "last_subtok",
+          3
+        ],
+        [
+          "last_subtok",
+          4
+        ],
+        [
+          "last_subtok",
+          5
+        ],
+        [
+          "last_subtok",
+          6
+        ],
+        [
+          "last_subtok",
+          7
+        ]
+      ],
+      "grid": [
+        1e-06,
+        1e-05,
+        0.0001,
+        0.001
+      ]
+    },
+    "controls stats": {
+      "date": "2026-11-21T22:21:20",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047628",
+      "positions": [
+        "first_diff",
+        "last_subtok"
+      ],
+      "layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48
+      ],
+      "n_pairs": 1025,
+      "n_targets": 40,
+      "n_boot": 2000,
+      "boot_seed": 0,
+      "null_seeds_B": 5,
+      "misspelled": [
+        "acquiscent",
+        "boarish",
+        "compasionate",
+        "deliquent",
+        "empatheticness",
+        "forebearance",
+        "igorant",
+        "innnocent",
+        "mainicure",
+        "mannerable",
+        "mischevious",
+        "posessive",
+        "stoudious",
+        "stubborness",
+        "toublemaker",
+        "uncertanties",
+        "unformal"
+      ],
+      "n_layers": 48,
+      "fixed_depth": {
+        "layer": 20,
+        "n_layers": 48,
+        "position": "last_subtok",
+        "chosen_on": {
+          "model": "lapa-12b-instruct",
+          "bias": "gender"
+        },
+        "date": "2026-11-21",
+        "rule": "Middle of the lapa/gender plateau in WP5 (last_subtok, layers 15-26 of 48, pairwise accuracy 0.84-0.87 throughout; midpoint 20.5, rounded down). Not the peak layer (22 for pairwise, 20 for per-sentence accuracy).",
+        "rel_depth": 0.4166666666666667,
+        "layer_this_run": 20
+      }
+    },
+    "pipeline quick": {
+      "date": "2026-11-21T22:21:20",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047628",
+      "steps": {
+        "meta": "skipped: meta.csv exists",
+        "extract": "skipped: 98 layer files (49 hidden states), ell filled",
+        "gate 1": "skipped: gate1.txt all PASS",
+        "probe": "ran (2.6 min)",
+        "null (quick)": "ran (7.0 min)",
+        "cgrid": "ran (0.2 min)",
+        "stats": "ran (0.0 min)"
+      },
+      "result": "ok"
+    }
+  }
+}

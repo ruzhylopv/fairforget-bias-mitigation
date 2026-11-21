@@ -1,5 +1,5 @@
-[x] null mean over seeds within 0.50 +- 0.03, every probe (5 seeds)
-      acc: largest |mean - 0.5| 0.011 (last_subtok 9); single runs 0.468-0.529, 3/370 outside the band, SD 0.012 vs binomial 0.011; acc_pair: largest |mean - 0.5| 0.015 (first_diff 12); single runs 0.459-0.546, 23/370 outside the band, SD 0.017 vs binomial 0.016
+[x] null mean over seeds within 0.50 +- 0.03, every probe (100 seeds)
+      acc: largest |mean - 0.5| 0.002 (last_subtok 11); single runs 0.436-0.552, 249/7400 outside the band, SD 0.014 vs binomial 0.011; acc_pair: largest |mean - 0.5| 0.004 (first_diff 15); single runs 0.420-0.567, 1128/7400 outside the band, SD 0.021 vs binomial 0.016
 [x] every outer fold 50/50; no target in train and test
       S=1/S=0 per fold [(205, 205), (204, 204), (204, 204), (204, 204), (203, 203)]; targets in >1 fold: 0; tests/test_probing_probe.py::test_outer_folds_never_share_a_target_and_keep_pairs_together
 [x] groups reach the inner CV
@@ -10,19 +10,19 @@
       layers [0, 1, 2, 3, 4, 5, 6] with grid 1e-06,1e-05,0.0001,0.001: max change acc 0.000, pair 0.000; still at the bottom: none
 
 fixed depth 0.417 = layer 15 of 36, last_subtok (fixed 2026-11-21 on lapa-12b-instruct/gender)
-  acc_pair: 0.825 [0.803, 0.845], gap vs ell +0.153 [+0.112, +0.193], gap vs layer 0 +0.250 [+0.213, +0.286], p 0.167 (B 5)
-  acc: 0.737 [0.717, 0.758], gap vs ell +0.141 [+0.113, +0.171], gap vs layer 0 +0.158 [+0.129, +0.185], p 0.167 (B 5)
+  acc_pair: 0.825 [0.803, 0.845], gap vs ell +0.153 [+0.112, +0.193], gap vs layer 0 +0.250 [+0.213, +0.286], p 0.010 (B 100)
+  acc: 0.737 [0.717, 0.758], gap vs ell +0.141 [+0.113, +0.171], gap vs layer 0 +0.158 [+0.129, +0.185], p 0.010 (B 100)
 acc_pair: baseline_ell 0.672 [0.636, 0.707]; without misspellings 0.675 (+0.0031)
   first_diff layer 0 (lexical): 0.592 [0.552, 0.632]
-  peak first_diff layer 20: 0.836 [0.813, 0.859], gap vs ell +0.165 [+0.117, +0.210], gap vs layer 0 +0.244 [+0.200, +0.287], p 0.167, p_corr 0.167 (B 5); without misspellings 0.836 (+0.0001)
-    null range over all layers and seeds: 0.474-0.543
+  peak first_diff layer 20: 0.836 [0.813, 0.859], gap vs ell +0.165 [+0.117, +0.210], gap vs layer 0 +0.244 [+0.200, +0.287], p 0.010, p_corr 0.010 (B 100); without misspellings 0.836 (+0.0001)
+    null range over all layers and seeds: 0.420-0.567
   last_subtok layer 0 (lexical): 0.575 [0.545, 0.606]
-  peak last_subtok layer 20: 0.849 [0.829, 0.870], gap vs ell +0.177 [+0.135, +0.218], gap vs layer 0 +0.274 [+0.239, +0.310], p 0.167, p_corr 0.167 (B 5); without misspellings 0.849 (+0.0003)
-    null range over all layers and seeds: 0.459-0.546
+  peak last_subtok layer 20: 0.849 [0.829, 0.870], gap vs ell +0.177 [+0.135, +0.218], gap vs layer 0 +0.274 [+0.239, +0.310], p 0.010, p_corr 0.010 (B 100); without misspellings 0.849 (+0.0003)
+    null range over all layers and seeds: 0.420-0.564
 acc: baseline_ell 0.596 [0.573, 0.619]; without misspellings 0.597 (+0.0012)
   first_diff layer 0 (lexical): 0.575 [0.546, 0.605]
-  peak first_diff layer 19: 0.754 [0.732, 0.777], gap vs ell +0.159 [+0.128, +0.188], gap vs layer 0 +0.179 [+0.147, +0.214], p 0.167, p_corr 0.167 (B 5); without misspellings 0.754 (+0.0001)
-    null range over all layers and seeds: 0.475-0.529
+  peak first_diff layer 19: 0.754 [0.732, 0.777], gap vs ell +0.159 [+0.128, +0.188], gap vs layer 0 +0.179 [+0.147, +0.214], p 0.010, p_corr 0.010 (B 100); without misspellings 0.754 (+0.0001)
+    null range over all layers and seeds: 0.436-0.552
   last_subtok layer 0 (lexical): 0.579 [0.554, 0.602]
-  peak last_subtok layer 19: 0.772 [0.749, 0.795], gap vs ell +0.176 [+0.144, +0.208], gap vs layer 0 +0.193 [+0.156, +0.229], p 0.167, p_corr 0.167 (B 5); without misspellings 0.772 (+0.0004)
-    null range over all layers and seeds: 0.468-0.526
+  peak last_subtok layer 19: 0.772 [0.749, 0.795], gap vs ell +0.176 [+0.144, +0.208], gap vs layer 0 +0.193 [+0.156, +0.229], p 0.010, p_corr 0.010 (B 100); without misspellings 0.772 (+0.0004)
+    null range over all layers and seeds: 0.447-0.547
