@@ -65,6 +65,7 @@ from probing.probe import (
     N_INNER,
     SUBSETS,
     THREAD_VARS,
+    at_edge,
     c_edge,
     fit_baseline,
     fit_layer,
@@ -616,7 +617,7 @@ def gate_checks(ctx, summary, preds, null=None, cgrid=None) -> list:
     else:
         d_acc = (cgrid["acc"] - cgrid["acc_wp5"]).abs().max()
         d_pair = (cgrid["acc_pair"] - cgrid["acc_pair_wp5"]).abs().max()
-        low = cgrid[cgrid["C_edge"].str.contains("low", na=False)]
+        low = cgrid[at_edge(cgrid["C_edge"], "low")]
         detail = (
             f"layers {sorted(int(k) for k in cgrid['layer'].unique())} "
             f"with grid {cgrid['grid'].iloc[0]}: "
@@ -634,7 +635,7 @@ def low_edge_probes(summary) -> list:
     if summary is None:
         return []
     s = summary[(summary["position"] != BASELINE[0])]
-    s = s[s["C_edge"].fillna("").astype(str).str.contains("low")]
+    s = s[at_edge(s["C_edge"], "low")]
     return sorted(zip(s["position"], s["layer"].astype(int)))
 
 

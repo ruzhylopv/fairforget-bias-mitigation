@@ -251,3 +251,29 @@ def test_null_check_judges_the_mean_over_seeds_not_single_runs():
     _, ok, detail = controls.null_check(leak, n_rows=2050)
     assert not ok and "(last_subtok 2)" in detail
     assert controls.null_check(None, 2050)[1] is None
+
+
+def test_c_edge_columns_without_any_edge_are_read_as_text(tmp_path):
+    """qwen3/gender: no refitted probe at an edge -> an all-empty C_edge column, which
+    read_csv turns into NaN floats; the gate check crashed on .str."""
+    path = tmp_path / "c_grid_low.csv"
+    pd.DataFrame({"position": ["first_diff"] * 2, "layer": [0, 1], "C_edge": ["", ""]}).to_csv(
+        path, index=False
+    )
+    edge = pd.read_csv(path)["C_edge"]
+    assert edge.dtype == float  # the trap
+    assert not probe.at_edge(edge, "low").any()
+    assert probe.at_edge(pd.Series(["low", "", "low+high", np.nan]), "low").tolist() == [
+        True,
+        False,
+        True,
+        False,
+    ]
+    summary = pd.DataFrame(
+        {
+            "position": ["first_diff", controls.BASELINE[0]],
+            "layer": [0, -1],
+            "C_edge": [np.nan, np.nan],
+        }
+    )
+    assert controls.low_edge_probes(summary) == []

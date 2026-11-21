@@ -241,6 +241,12 @@ def c_edge(chosen, grid) -> str:
     return "+".join(e for e, c in (("low", min(grid)), ("high", max(grid))) if c in chosen)
 
 
+def at_edge(c_edge, which: str):
+    """Rows whose ``C_edge`` names ``which`` ("low" / "high"). Read from CSV, a column with no
+    edge at all is all-NaN floats, so it is turned into text first."""
+    return pd.Series(c_edge).fillna("").astype(str).str.contains(which).to_numpy()
+
+
 def most_frequent(values):
     """Most frequent C; ties go to the smaller (more regularised) one."""
     counts = Counter(values)
@@ -421,8 +427,8 @@ def main(argv=None):
     summary.insert(2, "rel_depth", rel_depth(summary["layer"], n_layers))
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(summary_path, index=False)
-    high = summary[summary["C_edge"].str.contains("high", na=False)]
-    low = summary[summary["C_edge"].str.contains("low", na=False)]
+    high = summary[at_edge(summary["C_edge"], "high")]
+    low = summary[at_edge(summary["C_edge"], "low")]
     info = {
         "model": args.model,
         "bias": args.bias,
