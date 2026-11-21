@@ -89,12 +89,31 @@ def load_model(model_name_or_path):
     return model, load_tokenizer(model_name_or_path)
 
 
+def auto_tokenizer(source, **kwargs):
+    """``AutoTokenizer`` with the slow tokenizer, as for every model so far; the fast one only if
+    the model ships no slow tokenizer (Llama 3 has only tokenizer.json). The probing token
+    positions (tokenization check) and the extraction both load through here, so they always
+    use the same tokenizer."""
+    try:
+        return AutoTokenizer.from_pretrained(
+            source, trust_remote_code=True, use_fast=False, **kwargs
+        )
+    except (ValueError, OSError, TypeError, AttributeError) as slow_error:
+        try:
+            tok = AutoTokenizer.from_pretrained(
+                source, trust_remote_code=True, use_fast=True, **kwargs
+            )
+        except Exception:
+            raise slow_error from None
+        print(f"{source}: no slow tokenizer ({type(slow_error).__name__}), using the fast one")
+        return tok
+
+
 def load_tokenizer(model_name_or_path, **kwargs):
-    """The tokenizer as ``load_model`` sets it up: slow, left padding, pad = eos."""
+    """The tokenizer as ``load_model`` sets it up: slow (see ``auto_tokenizer``), left padding,
+    pad = eos."""
     model_name_or_path = resolve_model(model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name_or_path, trust_remote_code=True, use_fast=False, **kwargs
-    )
+    tokenizer = auto_tokenizer(model_name_or_path, **kwargs)
     tokenizer.pad_token_id = tokenizer.eos_token_id
     tokenizer.padding_side = "left"
     tokenizer.mask_token_id = tokenizer.eos_token_id

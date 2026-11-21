@@ -20,9 +20,16 @@ Outputs (in --out_dir, default results/tokenization-check-nov17):
     positions/<model>.json   per-sentence token positions for extraction
     meta.json          tokenizer sources, transformers version, command line
 
+With ``--merge`` only the given models are (re)computed and merged into the existing outputs:
+their rows in pairs.csv and summary.csv are replaced or appended, every other model's rows stay
+byte for byte as they were (the meta tables of finished runs were built from them), and
+examples.md / meta.json get the new models added.
+
 Usage:
     # JUPITER login node, from your clone
     source slurm/env.sh && python scripts/tokenization_check.py
+    # add one model to the existing outputs
+    source slurm/env.sh && python scripts/tokenization_check.py --models llama31-8b-instruct --merge
     # laptop (tokenizers downloaded from the hub; Gemma 3 is gated, needs `hf auth login`)
     uv run python scripts/tokenization_check.py
     # options: --models qwen3-8b  --hub lapa-12b-instruct=org/repo  --limit 200  --out_dir ...
@@ -37,10 +44,10 @@ from pathlib import Path
 
 import torch
 import transformers
-from transformers import AutoTokenizer
 
 from rmu.config import load_config, repo_path, resolve_model
 from rmu.unlearn import from_first_difference
+from rmu.utils import auto_tokenizer
 
 DEFAULT_MODELS = ["lapa-12b-instruct", "gemma3-12b-it", "qwen3-8b"]
 # Used only when the shared models folder is not there (e.g. on a laptop).
@@ -48,6 +55,7 @@ HUB_FALLBACK = {
     "lapa-12b-instruct": "lapa-llm/lapa-v0.1.2-instruct",
     "gemma3-12b-it": "google/gemma-3-12b-it",
     "qwen3-8b": "Qwen/Qwen3-8B",
+    "llama31-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",  # gated
 }
 N_EXAMPLES = 5
 
@@ -134,9 +142,7 @@ def load_tokenizer(name, hub_overrides, local_files_only):
     else:
         source = hub_overrides.get(name) or HUB_FALLBACK.get(name) or name
         print(f"[{name}] {path} not found, loading tokenizer from the hub: {source}")
-    tok = AutoTokenizer.from_pretrained(
-        source, trust_remote_code=True, use_fast=False, local_files_only=local_files_only
-    )
+    tok = auto_tokenizer(source, local_files_only=local_files_only)
     tok.pad_token_id = tok.eos_token_id
     tok.padding_side = "left"
     tok.mask_token_id = tok.eos_token_id
@@ -364,9 +370,26 @@ def examples_md(rows, models):
     return "\n".join(lines)
 
 
-def write_csv(path, rows):
+def merge_csv(path, new_rows, models):
+    """Rows of ``path`` (as written: strings) without ``models``, then ``new_rows``; the other
+    models' rows come back unchanged, in their order."""
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        old, cols = list(reader), reader.fieldnames
+    if new_rows and list(new_rows[0]) != cols:
+        raise ValueError(f"{path}: columns {cols} differ from the new rows' {list(new_rows[0])}")
+    return [r for r in old if r["model"] not in models] + new_rows
+
+
+def line_end(path) -> str:
+    """The line terminator ``path`` already uses (the committed CSVs use "\\n")."""
+    with open(path, "rb") as f:
+        return "\r\n" if f.readline().endswith(b"\r\n") else "\n"
+
+
+def write_csv(path, rows, lineterminator="\r\n"):
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w = csv.DictWriter(f, fieldnames=list(rows[0]), lineterminator=lineterminator)
         w.writeheader()
         w.writerows(rows)
 
@@ -384,6 +407,11 @@ def main():
     ap.add_argument("--local_files_only", action="store_true", help="never hit the hub")
     ap.add_argument("--out_dir", default="results/tokenization-check-nov17")
     ap.add_argument("--limit", type=int, default=None, help="first N pairs only (debugging)")
+    ap.add_argument(
+        "--merge",
+        action="store_true",
+        help="compute only --models and merge them into the existing outputs in --out_dir",
+    )
     args = ap.parse_args()
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
@@ -410,22 +438,31 @@ def main():
         )
 
     summary = summarise(all_rows)
-    write_csv(out / "pairs.csv", all_rows)
-    write_csv(out / "summary.csv", summary)
-    (out / "examples.md").write_text(examples_md(all_rows, models), encoding="utf-8")
-    (out / "meta.json").write_text(
-        json.dumps(
-            {
-                "argv": sys.argv,
-                "transformers": transformers.__version__,
-                "tokenizers": sources,
-                "n_pairs": len(pairs),
-                "files": [str(f) for f in files],
-            },
-            indent=1,
-        ),
-        encoding="utf-8",
-    )
+    info = {
+        "argv": sys.argv,
+        "transformers": transformers.__version__,
+        "tokenizers": sources,
+        "n_pairs": len(pairs),
+        "files": [str(f) for f in files],
+    }
+    if args.merge:
+        if args.limit:
+            raise ValueError("--merge with --limit would mix a partial model into pairs.csv")
+        for name, new in (("pairs.csv", all_rows), ("summary.csv", summary)):
+            end = line_end(out / name)
+            write_csv(out / name, merge_csv(out / name, new, models), lineterminator=end)
+        examples = (out / "examples.md").read_text(encoding="utf-8")
+        new = examples_md(all_rows, models).split("\n", 2)[2]  # without the title
+        (out / "examples.md").write_text(examples.rstrip("\n") + "\n\n" + new, encoding="utf-8")
+        meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+        meta["tokenizers"] = {**meta.get("tokenizers", {}), **sources}
+        meta.setdefault("merged", []).append(info)
+        info = meta
+    else:
+        write_csv(out / "pairs.csv", all_rows)
+        write_csv(out / "summary.csv", summary)
+        (out / "examples.md").write_text(examples_md(all_rows, models), encoding="utf-8")
+    (out / "meta.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
 
     cols = list(summary[0])
     print("\n" + "\t".join(cols))
