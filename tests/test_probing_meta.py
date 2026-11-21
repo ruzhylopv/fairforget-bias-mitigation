@@ -38,6 +38,22 @@ def test_build_meta_interleaves_pairs_stereotype_first(pairs):
     assert (df["model"] == MODEL).all() and (df["bias_type"] == "gender").all()
 
 
+def test_build_meta_drops_excluded_items_as_whole_pairs(pairs):
+    five, path = pairs
+    gone = five["item_id"][1]
+
+    df = meta.build_meta(MODEL, pairs_csv=path, exclude={gone: "test"})
+
+    assert len(df) == 8 and gone not in set(df["item_id"])
+    assert list(df["row"]) == list(range(8))
+
+
+def test_real_exclusions_are_lapa_gender_items():
+    real = pd.read_csv(repo_path(meta.PAIRS_CSV), keep_default_na=False, dtype=str)
+    ids = set(real[(real["model"] == MODEL) & (real["bias_type"] == "gender")]["item_id"])
+    assert set(meta.EXCLUDE_ITEMS) <= ids
+
+
 def test_build_meta_index_formula(pairs):
     five, path = pairs
     df = meta.build_meta(MODEL, pairs_csv=path)

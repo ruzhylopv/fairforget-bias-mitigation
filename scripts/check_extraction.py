@@ -9,6 +9,8 @@ A wrong activation file looks exactly like a right one, so before any probe is t
                               at the saved positions decode to ``word``.
     2. shared prefix (GPU)    10 pairs, both sentences alone: every position before the first
                               differing token is identical at every layer (causal model).
+                              Rerun in float32: bf16 rounding (different kernel shapes for
+                              different lengths) shrinks there, a leak would not.
     3. layer 0 (CPU)          rows whose saved token is the same token id have identical
                               ``layer_00`` rows; different ids have different rows.
     4. positions (CPU)        single-token words: first_diff and last_subtok rows identical at
@@ -44,9 +46,16 @@ from probing.io import POSITION_COLUMNS, POSITIONS, layer_path, load_layer, load
 from probing.io import validate_meta as _validate_meta
 from rmu.config import resolve_model
 
-# Rows whose last token runs past the attribute word ("encourage" -> "▁encouraged"), WP3.
-KNOWN_OVERRUN = (1132, 1133, 1808, 1809)
+# Sentences whose last token runs past the attribute word ("encourage" -> "▁encouraged"), WP3.
+# By sentence_id, since row numbers shift when the meta changes.
+KNOWN_OVERRUN = {
+    "bbadaf677627088e7c3e2dd4631c013f": "encourage -> encouraged",
+    "9afce77a97da5d1a2b03c956ddf58435": "demoralize -> demoralized",
+    "451515cbb4bc6bcb3fa6b94c4cb160b8": "protect -> protected",
+    "98740dca42c9c302dc2b8b1054883de4": "attack -> attacked",
+}
 COS_MIN, REL_MAX, ELL_TOL = 0.999, 0.01, 0.05
+FP32_REL_MAX = 1e-4  # check 2 in float32: rounding only
 
 
 class Results:
@@ -254,12 +263,12 @@ def _compare(single, saved):
 
 def pick_rows(meta, n_rows, n_multi, seed):
     rng = np.random.default_rng(seed)
-    pool = np.setdiff1d(np.arange(len(meta)), KNOWN_OVERRUN)
+    known = np.flatnonzero(meta["sentence_id"].isin(list(KNOWN_OVERRUN)).to_numpy())
+    pool = np.setdiff1d(np.arange(len(meta)), known)
     multi = pool[(meta["n_word_tokens"].to_numpy()[pool] > 1)]
     m = rng.choice(multi, size=min(n_multi, len(multi)), replace=False)
     rest = rng.choice(np.setdiff1d(pool, m), size=n_rows - len(m), replace=False)
-    known = [r for r in KNOWN_OVERRUN if r < len(meta)]
-    return sorted(map(int, np.concatenate([m, rest]))), known
+    return sorted(map(int, np.concatenate([m, rest]))), [int(r) for r in known]
 
 
 @torch.no_grad()
@@ -350,11 +359,10 @@ def check_single(res, meta, model_name, root, model, tokenizer, rows, known, n_s
 
 
 @torch.no_grad()
-def check_prefix(res, meta, model, tokenizer, n_pairs, seed, n_states):
+def prefix_diffs(model, tokenizer, meta, pairs):
+    """Per pair: both sentences alone, compare every prefix position at every layer."""
     device = model.get_input_embeddings().weight.device
-    rng = np.random.default_rng(seed + 1)
-    pairs = sorted(map(int, rng.choice(len(meta) // 2, size=n_pairs, replace=False)))
-    problems, bit_identical, worst_rel, worst_cos, details = [], True, 0.0, 1.0, []
+    details, problems = [], []
     for i in pairs:
         s, a = meta.iloc[2 * i], meta.iloc[2 * i + 1]
         n_prefix = int(s["n_tokens"] + s["idx_first_diff"])  # tokens before first diff, incl. BOS
@@ -368,42 +376,102 @@ def check_prefix(res, meta, model, tokenizer, n_pairs, seed, n_states):
         if not torch.equal(out["s"][0][:n_prefix], out["a"][0][:n_prefix]):
             problems.append(f"pair {i}: prefix token ids differ")
             continue
-        p_rel, p_cos, p_equal = 0.0, 1.0, True
-        for hs, ha in zip(out["s"][1].hidden_states, out["a"][1].hidden_states):
+        d = {
+            "pair": i,
+            "rows": [2 * i, 2 * i + 1],
+            "n_prefix": n_prefix,
+            "bit_identical": True,
+            "min_cos": 1.0,
+            "max_rel": 0.0,
+            "worst_at": None,
+            "max_rel_by_layer": [],
+        }
+        for k, (hs, ha) in enumerate(zip(out["s"][1].hidden_states, out["a"][1].hidden_states)):
             x = hs[0, :n_prefix].float().cpu().numpy()
             y = ha[0, :n_prefix].float().cpu().numpy()
-            p_equal &= bool(np.array_equal(x, y))
-            for u, v in zip(x, y):
+            d["bit_identical"] &= bool(np.array_equal(x, y))
+            layer_rel = 0.0
+            for j, (u, v) in enumerate(zip(x, y)):
                 cos, rel = _compare(u, v)
-                p_rel, p_cos = max(p_rel, rel), min(p_cos, cos)
-        bit_identical &= p_equal
-        worst_rel, worst_cos = max(worst_rel, p_rel), min(worst_cos, p_cos)
-        if p_cos < COS_MIN or p_rel > REL_MAX:
-            problems.append(
-                f"pair {i} (rows {2 * i}/{2 * i + 1}): cos {p_cos:.6f}, rel {p_rel:.2e}"
-            )
-        details.append(
-            {"pair": i, "n_prefix": n_prefix, "bit_identical": p_equal, "max_rel": p_rel}
+                d["min_cos"] = min(d["min_cos"], cos)
+                layer_rel = max(layer_rel, rel)
+                if rel > d["max_rel"]:
+                    d["max_rel"], d["worst_at"] = rel, f"layer {k}, token {j}"
+            d["max_rel_by_layer"].append(layer_rel)
+        details.append(d)
+    return details, problems
+
+
+def _print_prefix(details, label):
+    print(f"\n  shared prefix, {label}")
+    print("  pair  rows        prefix  bit-identical  min cos     max rel   worst at")
+    for d in details:
+        print(
+            f"  {d['pair']:4d}  {d['rows'][0]:4d}/{d['rows'][1]:<4d}  {d['n_prefix']:6d}  "
+            f"{str(d['bit_identical']):13s}  {d['min_cos']:.6f}  {d['max_rel']:.2e}  "
+            f"{d['worst_at'] or '-'}"
         )
-    how = (
-        "bit-identical"
-        if bit_identical
-        else (
-            f"not bit-identical, within tolerance (worst rel {worst_rel:.2e}, "
-            f"cos {worst_cos:.6f}): "
-            "note on the card"
+
+
+def check_prefix(res, meta, model, tokenizer, n_pairs, seed, n_states, fp32=True):
+    """bf16 first; then the same pairs in float32, which separates rounding from a leak.
+
+    Two sentences of different lengths go through kernels of different shapes, so bf16 sums
+    can differ slightly even with identical prefixes. Rounding shrinks by orders of magnitude in
+    float32; a leak between positions would not.
+    """
+    rng = np.random.default_rng(seed + 1)
+    pairs = sorted(map(int, rng.choice(len(meta) // 2, size=n_pairs, replace=False)))
+    dtype = str(model.dtype).replace("torch.", "")
+    native, problems = prefix_diffs(model, tokenizer, meta, pairs)
+    _print_prefix(native, dtype)
+
+    def within(ds, cos_min, rel_max):
+        return all(d["min_cos"] >= cos_min and d["max_rel"] <= rel_max for d in ds)
+
+    def worst(ds):
+        return max((d["max_rel"] for d in ds), default=0.0)
+
+    fp32_details = None
+    if fp32 and model.dtype != torch.float32:
+        print("\n  converting the model to float32 for the same pairs ...", flush=True)
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.set_float32_matmul_precision("highest")
+        model.float()
+        fp32_details, more = prefix_diffs(model, tokenizer, meta, pairs)
+        problems += more
+        _print_prefix(fp32_details, "float32")
+    print()
+
+    bit = all(d["bit_identical"] for d in native)
+    if problems:
+        ok, summary = False, f"failed: {problems}"
+    elif within(native, COS_MIN, REL_MAX):
+        ok = True
+        summary = "bit-identical" if bit else f"within tolerance (worst rel {worst(native):.2e})"
+        if fp32_details is not None:
+            summary += f"; float32 worst rel {worst(fp32_details):.2e}"
+    elif fp32_details is not None and within(fp32_details, 1.0 - FP32_REL_MAX, FP32_REL_MAX):
+        ok = True
+        summary = (
+            f"{dtype} differs by up to rel {worst(native):.2e} (above {REL_MAX:g}), float32 "
+            f"by {worst(fp32_details):.2e}: rounding from different kernel shapes, no leak"
         )
-    )
+    else:
+        ok = False
+        bad = [d for d in (fp32_details or native) if d["max_rel"] > FP32_REL_MAX]
+        summary = (
+            f"prefix differs beyond rounding ({'float32' if fp32_details else dtype}): "
+            + ", ".join(f"pair {d['pair']} rel {d['max_rel']:.2e} at {d['worst_at']}" for d in bad)
+        )
     res.add(
         "2 shared prefix",
-        not problems,
-        f"{len(pairs)} pairs, all {n_states} layers, every prefix position: {how}"
-        if not problems
-        else f"failed: {problems}",
-        bit_identical=bit_identical,
-        worst_rel=worst_rel,
-        worst_cos=worst_cos,
-        pairs=details,
+        ok,
+        f"{len(pairs)} pairs, all {n_states} layers, every prefix position: {summary}",
+        bit_identical=bit,
+        dtype=dtype,
+        pairs=native,
+        pairs_float32=fp32_details,
     )
 
 
@@ -420,6 +488,9 @@ def main(argv=None):
     ap.add_argument("--n_rows", type=int, default=20)
     ap.add_argument("--n_multi", type=int, default=5)
     ap.add_argument("--n_pairs", type=int, default=10)
+    ap.add_argument(
+        "--no_fp32", action="store_true", help="skip the float32 rerun of check 2 (saves ~1 min)"
+    )
     args = ap.parse_args(argv)
 
     from rmu import utils
@@ -450,7 +521,9 @@ def main(argv=None):
     if args.gpu:
         rows, known = pick_rows(meta, args.n_rows, args.n_multi, args.seed)
         check_single(res, meta, args.model, root, model, tokenizer, rows, known, n_states)
-        check_prefix(res, meta, model, tokenizer, args.n_pairs, args.seed, n_states)
+        check_prefix(
+            res, meta, model, tokenizer, args.n_pairs, args.seed, n_states, not args.no_fp32
+        )
 
     out = root / "acts" / args.model / "check_extraction.json"
     payload = {"model": args.model, "gpu": args.gpu, "seed": args.seed, "checks": res.checks}

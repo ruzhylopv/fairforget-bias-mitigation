@@ -2,7 +2,8 @@
 
 Question: is the stereotype label `S` linearly readable from a frozen model's activations at the
 attribute word, beyond what the word's own predictability explains? First run: Lapa-12B-Instruct,
-StereoSet intrasentence gender (dev + test), 1,026 pairs = 2,052 sentences. Code: `src/probing/`.
+StereoSet intrasentence gender (dev + test), 1,025 pairs = 2,050 sentences (1,026 minus one
+misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probing/`.
 
 ## The four steps
 
@@ -11,7 +12,7 @@ StereoSet intrasentence gender (dev + test), 1,026 pairs = 2,052 sentences. Code
    `python -m probing.meta --model lapa-12b-instruct --bias_types gender`
 2. **Extraction** (GPU): one frozen forward pass per sentence. Save `hidden_states[k]` at every
    layer and at each token position, and fill `ell` (the attribute word's log-prob) in the meta.
-   `src/probing/extract.py`; a few minutes for 2,052 sentences:
+   `src/probing/extract.py`; a few minutes for 2,050 sentences:
    ```bash
    # dry run, first 64 rows, written to {runs_root}/<job>/rq2-dry (rq2_root is not touched)
    make submit PURPOSE="rq2: extract dry run" \

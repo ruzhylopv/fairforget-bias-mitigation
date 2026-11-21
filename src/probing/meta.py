@@ -18,6 +18,13 @@ from rmu.config import repo_path
 PAIRS_CSV = "results/tokenization-check-nov17/pairs.csv"
 PUNCT = (".", "!", "?")
 
+# StereoSet items left out of RQ2 (item_id -> reason). Both sentences of a pair go together.
+EXCLUDE_ITEMS = {
+    "bdccea984366464e4a58c7a257a39abf": (
+        '"A man has testoserone." / "A man has estrogen.": misspelled, not a meaningful pair'
+    ),
+}
+
 
 def word_start(sentence: str, word: str, other: str) -> int:
     """Char index where ``word`` starts in ``sentence``.
@@ -73,10 +80,16 @@ def _side_rows(pairs: pd.DataFrame, side: str, other: str, label: int, model: st
     )
 
 
-def build_meta(model: str, bias_types=("gender",), pairs_csv=PAIRS_CSV) -> pd.DataFrame:
-    """Meta table for ``model``: pairs.csv order, stereotype row first in each pair."""
+def build_meta(
+    model: str, bias_types=("gender",), pairs_csv=PAIRS_CSV, exclude=EXCLUDE_ITEMS
+) -> pd.DataFrame:
+    """Meta table for ``model``: pairs.csv order, stereotype row first in each pair.
+
+    Items in ``exclude`` (item_id -> reason) are dropped, both sentences together.
+    """
     pairs = pd.read_csv(repo_path(pairs_csv), keep_default_na=False, dtype=str)
     pairs = pairs[(pairs["model"] == model) & pairs["bias_type"].isin(list(bias_types))]
+    pairs = pairs[~pairs["item_id"].isin(list(exclude or {}))]
     if pairs.empty:
         raise ValueError(f"no pairs for model {model!r} and bias types {list(bias_types)}")
     pairs = pairs.reset_index(drop=True)
@@ -100,7 +113,7 @@ def describe(df: pd.DataFrame) -> str:
     """Short summary of a meta table, for the CLI and quick checks."""
     stereo = df[df["S"] == 1]
     lines = [
-        f"rows: {len(df)}",
+        f"rows: {len(df)} (excluded items: {len(EXCLUDE_ITEMS)}, see probing.meta.EXCLUDE_ITEMS)",
         f"targets: {df['target'].nunique()}",
         f"S=1 / S=0: {(df['S'] == 1).sum()} / {(df['S'] == 0).sum()}",
         f"pairs with target_after_word (stereotype row): {int(stereo['target_after_word'].sum())}",
