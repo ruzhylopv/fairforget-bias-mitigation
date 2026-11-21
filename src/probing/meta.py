@@ -79,7 +79,10 @@ def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.D
     each pair.
 
     Items in ``exclude`` (item_id -> reason; default: ``exclude_items`` of
-    ``config/rq2/{bias}.yaml``) are dropped, both sentences together.
+    ``config/rq2/{bias}.yaml``) are dropped, both sentences together. So are pairs whose first
+    differing token is the sentence's first token, which happens only for tokenizers without
+    BOS (Qwen3: the attribute word starts the sentence): that token has no context and no
+    log-probability (``ell``). Their item ids are in ``df.attrs["dropped_no_context"]``.
     """
     if exclude is None:
         exclude = bias_config(bias)["exclude_items"]
@@ -92,6 +95,9 @@ def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.D
     for prefix in ("n_tok", "len", "first_diff", "last_subtok_from_end"):
         for side in ("stereo", "anti"):
             pairs[f"{prefix}_{side}"] = pairs[f"{prefix}_{side}"].astype("int64")
+    no_context = (pairs["first_diff_stereo"] == 0) | (pairs["first_diff_anti"] == 0)
+    dropped = pairs.loc[no_context, "item_id"].tolist()
+    pairs = pairs[~no_context].reset_index(drop=True)
 
     stereo = _side_rows(pairs, "stereo", "anti", 1, model)
     anti = _side_rows(pairs, "anti", "stereo", 0, model)
@@ -102,6 +108,7 @@ def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.D
     df.insert(0, "row", np.arange(len(df)))
     df = df[META_COLUMNS]
     validate_meta(df)
+    df.attrs["dropped_no_context"] = dropped
     return df
 
 
@@ -110,7 +117,8 @@ def describe(df: pd.DataFrame, n_excluded: int = 0) -> str:
     stereo = df[df["S"] == 1]
     bias = ", ".join(sorted(set(df["bias_type"])))
     lines = [
-        f"rows: {len(df)} (excluded items: {n_excluded}, see config/rq2/{bias}.yaml)",
+        f"rows: {len(df)} (excluded items: {n_excluded}, see config/rq2/{bias}.yaml; "
+        f"dropped, attribute word first and no BOS: {len(df.attrs.get('dropped_no_context', []))})",
         f"targets: {df['target'].nunique()}",
         f"S=1 / S=0: {(df['S'] == 1).sum()} / {(df['S'] == 0).sum()}",
         f"pairs with target_after_word (stereotype row): {int(stereo['target_after_word'].sum())}",
@@ -139,7 +147,13 @@ def main():
     record_run(
         paths,
         "meta",
-        {"pairs_csv": str(args.pairs_csv), "n_rows": len(df), "excluded_items": exclude},
+        {
+            "pairs_csv": str(args.pairs_csv),
+            "n_rows": len(df),
+            "excluded_items": exclude,
+            # No BOS and the attribute word first: no context, no ell (see build_meta).
+            "dropped_no_context": df.attrs["dropped_no_context"],
+        },
     )
     print(describe(df, len(exclude)))
     print(f"Wrote {out}")

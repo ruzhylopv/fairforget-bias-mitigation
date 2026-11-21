@@ -133,3 +133,25 @@ def test_cli_writes_validated_meta_and_records_the_step(pairs, tmp_path, monkeyp
     run = json.loads(paths.run_json.read_text())
     assert run["bias"] == "gender" and run["steps"]["meta"]["n_rows"] == 10
     assert run["steps"]["meta"]["excluded_items"] == io.bias_config("gender")["exclude_items"]
+
+
+def test_pairs_without_context_are_dropped_for_tokenizers_without_bos(pairs, tmp_path):
+    """No BOS and the attribute word first: first_diff 0, no context and no ell -> dropped."""
+    five, _ = pairs
+    no_bos = five.copy()
+    gone = no_bos["item_id"][3]
+    no_bos.loc[3, "first_diff_anti"] = "0"
+    path = tmp_path / "no_bos.csv"
+    no_bos.to_csv(path, index=False)
+
+    df = meta.build_meta(MODEL, "gender", pairs_csv=path, exclude={})
+
+    assert len(df) == 8 and gone not in set(df["item_id"])
+    assert df.attrs["dropped_no_context"] == [gone]
+    assert (
+        meta.build_meta(MODEL, "gender", pairs_csv=path.parent / "pairs.csv").attrs[
+            "dropped_no_context"
+        ]
+        == []
+    )
+    assert "no BOS: 1" in meta.describe(df)

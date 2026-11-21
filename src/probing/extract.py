@@ -143,6 +143,11 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
     n_states = len(get_decoder_layers(model)) + 1
     hidden = text_config.hidden_size
 
+    # Check the BOS only if the tokenizer really prepends one: some (Qwen) define a BOS id but
+    # never add it; there the sentence starts with its first word (see probing.meta).
+    bos_id = tokenizer.bos_token_id
+    adds_bos = bos_id is not None and tokenizer("a")["input_ids"][:1] == [bos_id]
+
     acts = {p: [[] for _ in range(n_states)] for p in POSITIONS}
     ell, mismatches, examples = [], [], []
     n = len(meta)
@@ -161,9 +166,9 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
                 f"{(start + bad[:5]).tolist()}: got {got[bad[:5]].tolist()}, "
                 f"meta {want[bad[:5]].tolist()}"
             )
-        if tokenizer.bos_token_id is not None:
+        if adds_bos:
             bos = ids_cpu[torch.arange(len(batch)), ids.shape[1] - torch.as_tensor(want)]
-            if not (bos == tokenizer.bos_token_id).all():
+            if not (bos == bos_id).all():
                 raise AssertionError(f"sentence does not start with BOS in batch at {start}")
 
         first = batch["idx_first_diff"].to_numpy()
