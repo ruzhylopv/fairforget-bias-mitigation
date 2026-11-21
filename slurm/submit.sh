@@ -27,6 +27,7 @@ shift
 cd "$REPO_DIR"
 job_id=$(sbatch --parsable --time="${JOB_TIME:-01:00:00}" --job-name="${JOB_NAME:-rmu}" \
     ${JOB_CPUS:+--cpus-per-task="$JOB_CPUS"} ${JOB_DEPENDENCY:+--dependency="$JOB_DEPENDENCY"} \
+    --comment="$RUN_PURPOSE" \
     slurm/run.sbatch "$@")
 run_dir=$(python -m rmu.config paths.runs_root)/$job_id
 echo "Submitted job $job_id"
