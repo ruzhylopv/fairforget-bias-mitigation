@@ -145,3 +145,22 @@ def test_c_edge_names_which_end():
     assert probe.c_edge([1e-4, 1e-2], grid) == "low"
     assert probe.c_edge([1.0], grid) == "high"
     assert probe.c_edge([1e-4, 1.0], grid) == "low+high"
+
+
+def test_workers_are_capped_by_memory_not_only_cpus(monkeypatch):
+    """lapa/race on a JUPITER node: 288 CPUs, 490 null fits of 7,874 x 3,840 float64 layers.
+    One worker per CPU ran out of memory; the cap keeps the total within 70% of what's free."""
+    from probing import probe
+
+    monkeypatch.setattr(probe, "usable_cpus", lambda: 288)
+    shape, memory = (7874, 3840), 450e9
+    n, why = probe.n_workers(490, -1, shape, memory=memory)
+    per_worker = probe.FIT_COPIES * shape[0] * shape[1] * 8 + probe.FIT_OVERHEAD
+    assert 100 < n < 288 and n * per_worker <= probe.MEMORY_SHARE * memory
+    assert why.startswith("memory")
+    # gender (2,040 rows) still gets one worker per CPU, and few tasks need few workers
+    assert probe.n_workers(490, -1, (2040, 3840), memory=memory) == (288, "288 CPUs")
+    assert probe.n_workers(14, -1, shape, memory=memory)[0] == 14
+    # --n_jobs wins; at least one worker even with almost no memory
+    assert probe.n_workers(490, 8, shape, memory=memory) == (8, "--n_jobs")
+    assert probe.n_workers(490, -1, shape, memory=1e6)[0] == 1

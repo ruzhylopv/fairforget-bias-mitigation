@@ -70,6 +70,7 @@ from probing.probe import (
     fit_baseline,
     fit_layer,
     inner_groups_check,
+    n_workers,
     outer_folds,
     pair_correct,
     pair_flag,
@@ -200,10 +201,14 @@ def run_null(ctx, seeds, positions, layers, path, n_jobs=-1):
             for k in layers
             if (seed, p, k) not in done
         ]
-        n_jobs = min(len(tasks), usable_cpus()) if n_jobs == -1 else n_jobs
+        shape = (
+            load_layer(ctx["paths"], tasks[0]["position"], tasks[0]["k"]).shape if tasks else (0, 0)
+        )
+        n_jobs, why = n_workers(len(tasks), n_jobs, shape)
         print(
             f"null: {len(seeds)} seeds x {len(positions) * len(layers)} probes, "
-            f"{len(tasks)} fits to do ({len(done)} rows already in {path}), {n_jobs} workers",
+            f"{len(tasks)} fits to do ({len(done)} rows already in {path}), "
+            f"{n_jobs} workers ({why})",
             flush=True,
         )
         if not tasks:
@@ -714,8 +719,9 @@ def main(argv=None):
             for p, k in keys
         ]
         rows = []
-        n_jobs = min(len(tasks), usable_cpus()) if args.n_jobs == -1 else args.n_jobs
-        print(f"cgrid: {len(tasks)} fits, grid {list(grid)}, {n_jobs} workers", flush=True)
+        shape = load_layer(paths, *keys[0]).shape
+        n_jobs, why = n_workers(len(tasks), args.n_jobs, shape)
+        print(f"cgrid: {len(tasks)} fits, grid {list(grid)}, {n_jobs} workers ({why})", flush=True)
         run_parallel(tasks, n_jobs, rows.append)
         df = pd.DataFrame(rows).drop(columns="seed").sort_values(["position", "layer"])
         df.insert(2, "grid", ",".join(f"{c:g}" for c in grid))

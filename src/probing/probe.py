@@ -332,6 +332,57 @@ def usable_cpus() -> int:
         return os.cpu_count() or 1
 
 
+# Peak memory of one fit_layer call, in copies of the float64 layer matrix: X itself, the outer
+# training split, the inner split, its scaled copy, and the solver's work arrays.
+FIT_COPIES = 6
+FIT_OVERHEAD = 0.4e9  # bytes per worker: Python, numpy, scikit-learn
+MEMORY_SHARE = 0.7  # of the memory available when the workers start
+
+
+def available_memory() -> float | None:
+    """Bytes this job can still use: MemAvailable, capped by the cgroup limit Slurm sets (minus
+    what the cgroup already uses). None where neither can be read (macOS)."""
+    avail = None
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemAvailable:"):
+                avail = float(line.split()[1]) * 1024
+    except OSError:
+        pass
+    try:  # cgroup v2: /proc/self/cgroup is "0::/<path>"
+        rel = open("/proc/self/cgroup").read().strip().split("::", 1)[1]
+        base = Path("/sys/fs/cgroup") / rel.lstrip("/")
+        limit = (base / "memory.max").read_text().strip()
+        if limit != "max":
+            free = float(limit) - float((base / "memory.current").read_text())
+            avail = free if avail is None else min(avail, free)
+    except (OSError, IndexError, ValueError):
+        pass
+    return avail
+
+
+def n_workers(n_tasks, n_jobs, shape, memory=None) -> tuple[int, str]:
+    """Workers for ``n_tasks`` fits on layer matrices of ``shape`` (rows, dim): ``n_jobs`` if
+    given (not -1), else as many as there are CPUs and memory for. Returns (n, why).
+
+    Profession and race have 3-4x gender's rows; with one worker per CPU (288 on a JUPITER
+    node) their 490-fit quick null ran out of memory (joblib TerminatedWorkerError).
+    """
+    if n_jobs != -1:
+        return max(1, min(n_tasks, n_jobs)), "--n_jobs"
+    cpus = usable_cpus()
+    per_worker = FIT_COPIES * shape[0] * shape[1] * 8 + FIT_OVERHEAD
+    memory = available_memory() if memory is None else memory
+    by_memory = cpus if memory is None else max(1, int(MEMORY_SHARE * memory // per_worker))
+    n = max(1, min(n_tasks, cpus, by_memory))
+    why = (
+        f"{cpus} CPUs"
+        if by_memory >= cpus or n == n_tasks
+        else (f"memory: {memory / 1e9:.0f} GB available, ~{per_worker / 1e9:.1f} GB per fit")
+    )
+    return n, why
+
+
 def save_folds(meta, folds, out_dir) -> Path:
     """Write folds.csv; if one exists, it must match (WP6 reuses the same folds)."""
     path = out_dir / "folds.csv"
@@ -413,7 +464,8 @@ def main(argv=None):
 
     # Probes, (position, layer) in parallel with one BLAS thread each.
     tasks = [(p, k) for p in positions for k in layers]
-    n_jobs = min(len(tasks), usable_cpus()) if args.n_jobs == -1 else args.n_jobs
+    n_jobs, why = n_workers(len(tasks), args.n_jobs, load_layer(paths, *tasks[0]).shape)
+    print(f"  {len(tasks)} probes, {n_jobs} workers ({why})", flush=True)
     # One BLAS thread per worker, via the environment the workers start with (calling into the
     # BLAS library at runtime, as threadpoolctl does, makes JUPITER's FlexiBLAS print "BLAS").
     for var in THREAD_VARS:
