@@ -63,6 +63,33 @@ misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probi
      --root R --summary R/summary.csv` gives ~0.92 per sentence on 20–22, ~0.50 elsewhere.
 4. **Comparison**: bootstrap CIs over targets, p-values from the null. "Signal beyond
    predictability" = the probe is significantly above both baselines and the null is at ≈50%.
+   `src/probing/controls.py` (WP6, gate 2), CPU, on the WP5 folds and predictions:
+   ```bash
+   # null: labels swapped in a random half of the pairs, full nested CV per probe and seed
+   make submit PURPOSE="rq2 wp6: null 5 seeds" JOB_CPUS=288 JOB_TIME=01:00:00 \
+     CMD="python -m probing.controls null --model lapa-12b-instruct --seeds 0-4"
+   make submit PURPOSE="rq2 wp6: null 100 seeds" JOB_CPUS=288 JOB_TIME=12:00:00 \
+     CMD="python -m probing.controls null --model lapa-12b-instruct --seeds 0-99"
+   # layers 0-7 with C down to 1e-6 (scores only; WP5 predictions untouched)
+   make submit PURPOSE="rq2 wp6: C grid 0-7" JOB_CPUS=72 JOB_TIME=00:30:00 \
+     CMD="python -m probing.controls cgrid --model lapa-12b-instruct --layers 0-7"
+   # p-values, bootstrap CIs, misspellings, gate 2 checklist (minutes)
+   make submit PURPOSE="rq2 wp6: stats" JOB_CPUS=8 JOB_TIME=00:20:00 \
+     CMD="python -m probing.controls stats --model lapa-12b-instruct"
+   uv run python scripts/plot_controls.py --results results/rq2-probing-nov21   # laptop
+   ```
+   - `null` appends one row per (seed, probe) to `null_scores.csv` as fits finish and skips
+     rows already there, so rerunning the same command after a time limit resumes it. Seeds
+     0-4 are the first five of 0-99. Pairwise accuracy follows the flipped labels.
+   - `pvalues.csv`: `p` against the same probe's null, `p_corr` against the max over all
+     probes of each shuffle (seeds with every probe only). Smallest p is 1/(B+1).
+   - `ci.csv`: 2,000 resamples of the 40 targets (all rows of each drawn target), the same
+     draws for every probe and the baseline, so `gap_low`/`gap_high` are paired. The fitted
+     probes are treated as fixed (no refitting variance).
+   - `robustness_no_misspellings.csv`: the summary without the pairs whose word is
+     `mainicure`, `uncertanties` or `forebearance`, from the stored predictions (no refit).
+   - `gate2.txt`: the checklist as far as it can be computed (null band, fold balance, folds
+     shared by probe and baseline and reproducing `summary.csv`, C grid).
 
 To test steps 3–4 without a GPU, `scripts/make_fake_acts.py` writes the real meta plus Gaussian
 activations with a signal planted at chosen layers (`--signal 20,21,22 --delta 2 --root ...`).

@@ -24,13 +24,8 @@ from sklearn.model_selection import GroupKFold, cross_val_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from probing.controls import flip_within_pairs
 from probing.io import POSITIONS, layer_path, load_layer, load_meta
-
-
-def flip_within_pairs(y, seed):
-    """Null labels: swap S inside a random half of the pairs (rows 2i and 2i+1)."""
-    swap = np.repeat(np.random.default_rng(seed).random(len(y) // 2) < 0.5, 2)
-    return np.where(swap, 1 - y, y)
 
 
 def probe_accuracy(X, y, groups, n_splits=5):
