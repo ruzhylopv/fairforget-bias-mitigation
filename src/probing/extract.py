@@ -123,9 +123,8 @@ def _model_inputs(tokenizer, sentences, device):
 def length_batches(n_tokens, batch_size: int) -> list:
     """Row indices in batches of equal token length (at most ``batch_size`` rows each).
 
-    No padding means a batch is the same computation as its sentences run one by one. With
-    left padding, some models (Qwen3 in bf16) give activations ~1-2% off the single-sentence
-    ones and ``ell`` up to ~0.15 nats off, depending on the other sentences in the batch.
+    Equal lengths avoid padding. With ``batch_size`` 1 (the default of ``extract``) every
+    sentence runs alone.
     """
     n_tokens = np.asarray(n_tokens)
     order = np.argsort(n_tokens, kind="stable")
@@ -143,9 +142,15 @@ def _decode_span(tokenizer, ids_row, first, last):
 
 
 @torch.no_grad()
-def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_every: int = 10):
-    """Run ``meta`` through ``model`` in batches of equal token length (no padding,
-    ``length_batches``); outputs are in ``meta``'s row order.
+def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 1, log_every: int = 200):
+    """Run ``meta`` through ``model``, by default one sentence at a time; larger batches hold
+    sentences of equal token length (``length_batches``). Outputs are in ``meta``'s row order.
+
+    Why one at a time: in bf16 the result depends on the batch shape for some models. Qwen3
+    gave activations ~1-2% and ``ell`` up to ~0.16 nats off the single-sentence values, both
+    with left padding and with equal-length batches of 32 (different kernels per batch size).
+    lapa's batches of 32 were bit-identical to single runs, so its saved activations are the
+    same quantity: each sentence run alone.
 
     Returns ``acts`` ({position: [N x hidden float32 array per hidden state]}), ``ell`` (N,)
     and ``checks`` (decode mismatches, batched vs single consistency).
@@ -299,7 +304,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True, help="short name (config/default.yaml) or path")
     ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
-    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="1 (default): each sentence alone, the same numbers as check 1 recomputes",
+    )
     ap.add_argument("--limit", type=int, default=None, help="first N rows only (dry run)")
     ap.add_argument("--root", default=None, help="where the meta is read (default: rq2_root)")
     ap.add_argument(

@@ -76,9 +76,11 @@ for per-sentence accuracy (default: pairwise).
    gender `first_diff` is always the word's first token, so this is the whole word's log-prob.
    Checks that run every time: `attention_mask.sum() == n_tokens` and BOS for every row, the
    number of hidden states, finite activations, `ell` finite and ≤ 0, the decoded tokens at the
-   saved positions compared with `word`, and batched vs one-at-a-time activations. Batches
-   hold sentences of equal token length only (no padding): with left padding Qwen3 gave
-   activations 1-2% and `ell` up to 0.15 nats off the single-sentence values. Results and provenance go to `acts/run.json` and to the committed `run.json` as
+   saved positions compared with `word`, and batched vs one-at-a-time activations. Sentences
+   run one at a time (`--batch_size 1`, the default): in bf16 Qwen3's activations depend on
+   the batch shape (1-2%, `ell` up to 0.16 nats; with left padding and with equal-length
+   batches alike), lapa's do not (bit-identical). So every model's activations are those of
+   the sentence run alone. Results and provenance go to `acts/run.json` and to the committed `run.json` as
    step `extract` (git commit read from `.git`,
    since compute nodes have no git; versions; job id; max |activation| per layer; mean `ell`
    by label; attribute-word SS = share of pairs with `ell_stereo > ell_anti`). Existing layer
