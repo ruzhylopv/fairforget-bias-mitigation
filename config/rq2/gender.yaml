@@ -1,16 +1,34 @@
 # RQ2 settings for the StereoSet bias type "gender" (read through probing.io.bias_config).
+# Reviewed 2026-11-21 from scripts/rq2_data_check.py (results/rq2/data_check/gender.md), card [6].
 #
 # exclude_items: pairs left out of the meta table by probing.meta (both sentences go together),
 #   item_id -> reason.
-# misspelled: attribute words whose pair probing.controls stats drops for the robustness check
-#   (robustness_no_misspellings.csv); case-insensitive, surrounding punctuation ignored.
+# misspelled: typos and non-words (wordfreq zipf 0, checked by hand; the same rule as profession
+#   and race). probing.controls stats drops their pairs in robustness_no_misspellings.csv only;
+#   case-insensitive, surrounding punctuation ignored. Until 2026-11-21 the list was the three
+#   lowest-ell misspellings (mainicure, uncertanties, forebearance).
+# Not listed (zipf 0 but kept as they are): nerfgun and wellbehaved (compounds written as one
+#   word), overfeeds and underfeeds (rare but real words).
 
 exclude_items:
   bdccea984366464e4a58c7a257a39abf: >-
     "A man has testoserone." / "A man has estrogen.": misspelled, not a meaningful pair
 
-# The misspelled words with the lowest ell (testoserone is already excluded above).
 misspelled:
-  - mainicure
-  - uncertanties
+  - acquiscent
+  - boarish
+  - compasionate
+  - deliquent
+  - empatheticness
   - forebearance
+  - igorant
+  - innnocent
+  - mainicure
+  - mannerable
+  - mischevious
+  - posessive
+  - stoudious
+  - stubborness
+  - toublemaker
+  - uncertanties
+  - unformal

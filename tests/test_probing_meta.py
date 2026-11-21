@@ -49,11 +49,20 @@ def test_build_meta_drops_excluded_items_as_whole_pairs(pairs):
     assert list(df["row"]) == list(range(8))
 
 
-def test_real_exclusions_are_lapa_gender_items():
+@pytest.mark.parametrize("bias", ["gender", "profession", "race"])
+def test_real_exclusions_are_items_of_their_bias_type(bias):
     real = pd.read_csv(repo_path(meta.PAIRS_CSV), keep_default_na=False, dtype=str)
-    ids = set(real[(real["model"] == MODEL) & (real["bias_type"] == "gender")]["item_id"])
-    exclude = io.bias_config("gender")["exclude_items"]
+    ids = set(real[(real["model"] == MODEL) & (real["bias_type"] == bias)]["item_id"])
+    exclude = io.bias_config(bias)["exclude_items"]
     assert exclude and set(exclude) <= ids
+
+
+@pytest.mark.parametrize("bias", ["profession", "race"])
+def test_meta_builds_for_every_model_with_the_reviewed_config(bias):
+    real = pd.read_csv(repo_path(meta.PAIRS_CSV), usecols=["model", "bias_type"], dtype=str)
+    for model in sorted(set(real.loc[real["bias_type"] == bias, "model"])):
+        df = meta.build_meta(model, bias)
+        assert not set(io.bias_config(bias)["exclude_items"]) & set(df["item_id"])
 
 
 def test_default_exclusions_come_from_the_bias_config(pairs, monkeypatch):

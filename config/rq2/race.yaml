@@ -1,0 +1,103 @@
+# RQ2 settings for the StereoSet bias type "race" (read through probing.io.bias_config).
+# Reviewed 2026-11-21 from scripts/rq2_data_check.py (results/rq2/data_check/race.md), card [6].
+#
+# exclude_items: pairs left out of the meta table (both sentences), item_id -> reason. Only
+#   structurally broken pairs: the first differing token is not in the attribute word, or the
+#   blank was filled with a run-together sentence / the same phrase twice.
+# misspelled: typos and non-words (wordfreq zipf 0, checked by hand); probing.controls stats
+#   drops their pairs in robustness_no_misspellings.csv only.
+# Not listed (zipf 0 but kept as they are): compounds written without a hyphen or space
+#   (businessowner cleancut closeminded freespirited hardworkers hottempered hulahoop noaccent
+#   peaceloving redhaired selfsufficient snaggletoothed southamerican straightlaced stuckup
+#   welldressed welleducated wellspoken zenlike bugridden antizionist), rare but real words
+#   (bigamists lisper macropenis monogamists nyctophobic unbathed uncaned wimpish), and slurs
+#   (cameljockey ragheaded slanteye sliteyes towelhead): those are the stereotypes themselves.
+
+exclude_items:
+  69af0dbd2998f82e05560f4eabe32d02: >-
+    "doesnt" / "does": one word is a prefix of the other; the first differing token lies after "does"
+  e1046e3f89f3dd2b33a867c5d60288ab: >-
+    "oman" / "omani": one word is a prefix of the other ("People in omani are from oman/omani.")
+  e9bd82bd11f8c5c35a7e8a66cc1cee04: >-
+    anti-stereotype is a run-together sentence ("irishmanarenotleprochuans")
+  05767ef34a97f15a24621f99dd59e384: >-
+    anti-stereotype is a run-together sentence ("notallrussiansarecriminals"); the stereotype sentence is ungrammatical
+  41ddaa1f16a2661991f309ebbe929c4d: >-
+    anti-stereotype is a run-together sentence ("allgermanysdonothatejews")
+  27dbef2db60fe89ff75304815207fa5a: >-
+    anti-stereotype is a run-together sentence ("allgreeksarenotloud")
+  66317ad75c763ba08fbd0553df8e6dfb: >-
+    anti-stereotype is a run-together sentence ("albaniansareverylovelypoeple")
+
+misspelled:
+  - adventerous
+  - adventorous
+  - afluent
+  - africian
+  - africianamerican
+  - agressors
+  - angree
+  - antisemetic
+  - arrid
+  - artiqulate
+  - atheletic
+  - beautfiful
+  - beautfiul
+  - busniessmen
+  - caucasion
+  - civlized
+  - clearn
+  - combatative
+  - condesending
+  - conscentious
+  - corupt
+  - cosmpolitan
+  - dilusional
+  - distinguised
+  - enpowered
+  - enterpreneurial
+  - europeon
+  - genrous
+  - geurilla
+  - gipsys
+  - grundgy
+  - homogenious
+  - husslers
+  - indeginous
+  - indutrius
+  - intilectual
+  - intolerent
+  - irrogant
+  - islandic
+  - lacivious
+  - lightskined
+  - mexicians
+  - mountaineous
+  - muslm
+  - opressors
+  - peacekepper
+  - pictureqsue
+  - playwrites
+  - plesent
+  - propserous
+  - prosporous
+  - richh
+  - satieted
+  - scarwney
+  - scrawney
+  - soberiety
+  - socialable
+  - submisive
+  - superstitous
+  - tannned
+  - teatotaler
+  - temptuous
+  - termoil
+  - terriosts
+  - terroist
+  - terrorisim
+  - tolerent
+  - umemployeed
+  - undeducated
+  - undevloped
+  - unnatractive

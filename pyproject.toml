@@ -25,6 +25,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.9",
+    "wordfreq>=3.1.1",
 ]
 # Provided by cluster modules (PyTorch, JupyterLab) on JUPITER; install only on laptops.
 local = [

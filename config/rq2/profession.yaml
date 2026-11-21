@@ -1,0 +1,85 @@
+# RQ2 settings for the StereoSet bias type "profession" (read through probing.io.bias_config).
+# Reviewed 2026-11-21 from scripts/rq2_data_check.py (results/rq2/data_check/profession.md), card [6].
+#
+# exclude_items: pairs left out of the meta table (both sentences), item_id -> reason. Only
+#   structurally broken pairs: the first differing token is not in the attribute word, or the
+#   blank was filled with a run-together sentence / the same phrase twice.
+# misspelled: typos and non-words (wordfreq zipf 0, checked by hand); probing.controls stats
+#   drops their pairs in robustness_no_misspellings.csv only.
+# Not listed (zipf 0 but kept as they are): compounds written without a hyphen or space
+#   (closeminded eventempered godfearing hardworkers longerhair nonbiased noninnovative
+#   nonprotective risktaking selfcentered straightlaced stuckup triggerhappy welleducated wellread
+#   wellrounded wellspoken) and rare but real words (cluttery postdoctorals toolman unartistic
+#   unattentive unempathetic unperceptive untraumatic wackjobs).
+
+exclude_items:
+  74433bbf007abaf18854138a4b8c092e: >-
+    "arent" / "are": one word is a prefix of the other; the first differing token lies after "are" (qwen3 positions fail)
+  cfa77b8ee198f1501f1765e71e2cbea3: >-
+    blank filled with run-together sentences ("pilotsaregoodlooking" / "uglypeoplecanbepilots")
+  8b2666d4ba531509fd429faeb9abb432: >-
+    anti-stereotype is a run-together sentence ("anyracecanplaythepiano")
+  d8e285baca73c7c65fffc08e47bd6ec8: >-
+    blank filled twice with a phrase ("poor but poor" / "pensionersworkhardfortheirpension but ...")
+  fd6c42d097f93951026241c3d0442014: >-
+    blank filled with run-together sentences ("extremelyrich" / "physicistisnotahighlypayingjob")
+  156819c8bbf846ec0166464d5130a352: >-
+    blank filled with run-together sentences ("plumberslooklikesupermario" / "notallpumbersaremario")
+  d64c83851c8ae0442679f3a5a395767a: >-
+    blank filled twice with a phrase ("verypoor and says verypoor" / "performingartistcanmakealotofmoney ...")
+
+misspelled:
+  - alcholism
+  - analitical
+  - annalitical
+  - apethetic
+  - articulant
+  - artististic
+  - bespecaled
+  - bussinessmen
+  - careing
+  - chartiable
+  - compationate
+  - compentent
+  - competetive
+  - curropt
+  - curteous
+  - devouted
+  - diciplined
+  - disingenuine
+  - dozey
+  - efficently
+  - elogant
+  - enoble
+  - fastitious
+  - flambouyant
+  - gental
+  - gentlemenly
+  - hardworkign
+  - intellegant
+  - jarbled
+  - knowledable
+  - lazey
+  - mathmatical
+  - mathmatician
+  - meak
+  - measley
+  - meticuolous
+  - obediant
+  - omniscent
+  - perserverent
+  - pety
+  - philosphical
+  - professsional
+  - queit
+  - sanctimonius
+  - sgnificant
+  - sympethetic
+  - tempramental
+  - unedcuated
+  - unimaginitive
+  - unsophicated
+  - validictorian
+  - vauge
+  - weatlhy
+  - whistful

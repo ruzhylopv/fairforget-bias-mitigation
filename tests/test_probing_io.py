@@ -110,7 +110,8 @@ def test_gender_config_holds_the_exclusion_and_the_misspellings():
     cfg = io.bias_config("gender")
     assert list(cfg["exclude_items"]) == ["bdccea984366464e4a58c7a257a39abf"]
     assert "testoserone" in cfg["exclude_items"]["bdccea984366464e4a58c7a257a39abf"]
-    assert cfg["misspelled"] == ["mainicure", "uncertanties", "forebearance"]
+    assert {"mainicure", "uncertanties", "forebearance", "igorant"} <= set(cfg["misspelled"])
+    assert len(cfg["misspelled"]) == 17 and "testoserone" not in cfg["misspelled"]
 
 
 def test_bias_config_errors(tmp_path, monkeypatch):
