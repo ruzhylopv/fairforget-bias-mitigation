@@ -1,4 +1,4 @@
-.PHONY: setup test lint format env smoke submit rq2 evaluate unlearn-eval jupyter tunnel jobs watch
+.PHONY: setup test lint format cluster-pull env smoke submit rq2evaluate unlearn-eval jupyter tunnel jobs watch
 
 # ---- Laptop -------------------------------------------------------------
 
@@ -22,6 +22,14 @@ tunnel:
 	@test -n "$(HOST)" -a -n "$(JUPITER_USER)" || \
 		{ echo "usage: make tunnel HOST=<compute node> JUPITER_USER=<cluster username>"; exit 1; }
 	ssh -4 -N -L 8888:$(HOST):8888 $(JUPITER_USER)@$(JUPITER_LOGIN)
+
+# Copy results from your clone on JUPITER into this repo (scripts/cluster_pull.sh), e.g.
+#   make cluster-pull                                            # all of results/
+#   make cluster-pull WHAT=results/rq2/gender/lapa-12b-instruct
+# Refuses to overwrite uncommitted local files unless FORCE=1. Uses the ssh alias `jupiter`
+# (JUPITER_HOST=... for another one).
+cluster-pull:
+	@FORCE=$(FORCE) bash scripts/cluster_pull.sh $(WHAT)
 
 # ---- JUPITER login node -------------------------------------------------
 
