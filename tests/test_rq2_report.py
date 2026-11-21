@@ -112,7 +112,12 @@ def test_collect_refuses_summary_and_ci_that_disagree(two_runs):
 
 
 def test_report_table_reads_the_fixed_depth_and_flags(two_runs):
-    table = rq2_report.report_table(rq2_report.collect(two_runs)).set_index("model")
+    both = rq2_report.report_table(rq2_report.collect(two_runs))
+    assert both["metric"].tolist() == ["acc_pair"] * 2 + ["acc"] * 2
+    # the fixture's pairwise accuracy is the per-sentence one + 0.01 everywhere
+    pair, sent = (both[both["metric"] == m].set_index("model") for m in ("acc_pair", "acc"))
+    assert (pair["fixed_estimate"] - sent["fixed_estimate"]).round(6).eq(0.01).all()
+    table = pair
     cfg = report_config()
 
     lapa, qwen = table.loc["lapa-12b-instruct"], table.loc["qwen3-8b"]
@@ -122,8 +127,10 @@ def test_report_table_reads_the_fixed_depth_and_flags(two_runs):
     assert lapa["ell"] == pytest.approx(0.61) and lapa["fixed_gap_layer0"] > lapa["fixed_gap"]
     assert lapa["n_pairs_tafter"] == 20 and lapa["best_p_corr_post_hoc"] == pytest.approx(0.0099)
     assert (lapa["gate1"], lapa["gate2"]) == ("PASS", "PASS")
-    tex = rq2_report.to_latex(table.reset_index())
+    tex = rq2_report.to_latex(both)
     assert r"\toprule" in tex and "lapa-12b-instruct$^\\dagger$" in tex and "12$^\\ast$" in tex
+    assert tex.index("{Pairwise accuracy}") < tex.index("{Per-sentence accuracy}")
+    assert tex.count("lapa-12b-instruct$^\\dagger$") == 2 and tex.count(r"\midrule") == 2
 
 
 def test_main_writes_the_tables_and_both_figures(two_runs, capsys):

@@ -7,14 +7,16 @@ A run is finished once ``probing.controls stats`` has written its ``ci.csv``. Wr
                              pvalues.csv and summary.csv, plus model, bias and run-level columns
                              (n_layers, n_pairs, n_targets, fixed layer, gate status). The rest
                              is made from this file only.
-    report_table.csv / .tex  one row per (model, bias), see ``report_table``
+    report_table.csv / .tex  one row per (metric, model, bias), see ``report_table``: pairwise
+                             and per-sentence accuracy, one block each in the LaTeX table
     fig_gap_by_depth.png/pdf small multiples: bias type x model, gap probe - ell with its CI
                              against relative depth, the fixed depth as a vertical line
     fig_forest.png/pdf       the gaps vs ell and vs layer 0 at the fixed depth, one row per run
 
-Gaps, not raw accuracies, are compared across runs: every run has its own baseline. All
-numbers are for one metric (default: pairwise accuracy) at the fixed depth and position of
-``config/rq2/report.yaml``; the best layer is reported too, marked post hoc, with p_corr.
+Gaps, not raw accuracies, are compared across runs: every run has its own baseline. The table
+reports both accuracies; the figures one (``--metric``, default pairwise accuracy). All at the
+fixed depth and position of ``config/rq2/report.yaml``; the best layer is reported too, marked
+post hoc, with p_corr.
 
 Usage:
     uv run python scripts/rq2_report.py [--metric acc_pair] [--results_root results/rq2]
@@ -41,6 +43,7 @@ BASELINE = "baseline_ell"
 # Colors by comparison (validated pair, dataviz reference palette slots 1-2).
 VS_ELL, VS_LAYER0 = SERIES["first_diff"], SERIES["last_subtok"]
 METRIC_NAMES = {"acc_pair": "pairwise accuracy", "acc": "per-sentence accuracy"}
+TABLE_METRICS = ("acc_pair", "acc")  # main table: pairwise first, then per-sentence
 RUN_COLUMNS = [
     "model",
     "bias",
@@ -164,13 +167,17 @@ def _row(d, position, layer, metric):
     return r.iloc[0] if len(r) else None
 
 
-def report_table(all_runs, metric="acc_pair", cfg=None) -> pd.DataFrame:
-    """One row per (model, bias): baselines, the probe at the fixed depth with both gaps, the
-    split by target position, the best layer (post hoc), gates and flags."""
+def report_table(all_runs, metrics=TABLE_METRICS, cfg=None) -> pd.DataFrame:
+    """One row per (metric, model, bias), metrics in the order given (a single name works
+    too): baselines, the probe at the fixed depth with both gaps, the split by target position,
+    the best layer (post hoc), gates and flags."""
     cfg = cfg or report_config()
     few = cfg.get("few_targets_below", 20)
+    metrics = [metrics] if isinstance(metrics, str) else list(metrics)
     rows = []
-    for (bias, model), d in all_runs.groupby(["bias", "model"], sort=False):
+    for metric, ((bias, model), d) in (
+        (m, g) for m in metrics for g in all_runs.groupby(["bias", "model"], sort=False)
+    ):
         run = d.iloc[0]
         pos, k = run["fixed_position"], int(run["fixed_layer"])
         ell, l0, fx = (
@@ -240,8 +247,9 @@ def _ci(est, low, high, signed=False, note="") -> str:
 
 
 def to_latex(table) -> str:
-    """booktabs table for the paper (one row per run)."""
-    metric = METRIC_NAMES.get(table["metric"].iloc[0], table["metric"].iloc[0])
+    """booktabs table for the paper: a block of rows (one per run) per metric."""
+    metrics = list(dict.fromkeys(table["metric"]))
+    names = [METRIC_NAMES.get(m, m) for m in metrics]
     head = [
         "Model",
         "Bias",
@@ -263,9 +271,15 @@ def to_latex(table) -> str:
         r"\begin{tabular}{ll" + "r" * (len(head) - 2) + "}",
         r"\toprule",
         " & ".join(head) + r" \\",
-        r"\midrule",
     ]
     for r in table.itertuples():
+        if r.Index == 0 or table["metric"].iloc[r.Index - 1] != r.metric:
+            name = METRIC_NAMES.get(r.metric, r.metric)
+            lines += [
+                r"\midrule",
+                r"\multicolumn{" + str(len(head)) + r"}{l}{\emph{" + name.capitalize() + r"}} \\",
+                r"\addlinespace[2pt]",
+            ]
         mark = r"$^\dagger$" if r.depth_chosen_here else ""
         few = r"$^\ast$" if r.few_targets else ""
         p = (
@@ -296,7 +310,8 @@ def to_latex(table) -> str:
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        r"\caption{RQ2 linear probes, " + metric + r" on held-out targets, 95\% bootstrap CIs "
+        r"\caption{RQ2 linear probes, " + " and ".join(names) + r" on held-out targets, 95\% "
+        r"bootstrap CIs "
         r"over targets. Fixed depth: " + f"{fd['rel_depth']:.3f}" + r" of the model's layers ("
         r"\texttt{" + fd["position"].replace("_", r"\_") + r"}), fixed on " + fd["date"] + r" "
         r"before other runs were looked at; $^\dagger$ the run it was chosen on. Gaps are probe "
@@ -487,20 +502,22 @@ def fig_forest(table, out):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--results_root", default=RESULTS_ROOT)
-    ap.add_argument("--metric", default="acc_pair", choices=sorted(METRIC_NAMES))
+    ap.add_argument(
+        "--metric", default="acc_pair", choices=sorted(METRIC_NAMES), help="for the figures"
+    )
     args = ap.parse_args(argv)
 
     root = repo_path(args.results_root)
     cfg = report_config()
     all_runs = collect(root, cfg)
     all_runs.to_csv(root / "all_runs.csv", index=False)
-    table = report_table(all_runs, args.metric, cfg)
+    table = report_table(all_runs, cfg=cfg)
     table.to_csv(root / "report_table.csv", index=False)
     (root / "report_table.tex").write_text(to_latex(table), encoding="utf-8")
     fig_gap_by_depth(all_runs, root / "fig_gap_by_depth", args.metric, cfg)
-    fig_forest(table, root / "fig_forest")
+    fig_forest(table[table["metric"] == args.metric], root / "fig_forest")
 
-    runs = table[["model", "bias"]].apply(" / ".join, axis=1).tolist()
+    runs = table[["model", "bias"]].drop_duplicates().apply(" / ".join, axis=1).tolist()
     print(f"{len(runs)} runs: {', '.join(runs)}")
     print(
         f"wrote all_runs.csv ({len(all_runs)} rows), report_table.csv/.tex, "
