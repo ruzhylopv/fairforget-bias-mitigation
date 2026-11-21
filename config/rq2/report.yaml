@@ -1,0 +1,22 @@
+# RQ2 reporting settings (read through probing.io.report_config).
+#
+# fixed_depth: the layer every new run is reported at, as a share of the model's depth
+#   (rel_depth = layer / n_layers; each model uses its nearest layer, halves rounded up:
+#   lapa/gemma3 48 -> 20, qwen3 36 -> 15, Llama 32 -> 13). Picking the best of 37-49 layers
+#   after looking makes the peak look better than it is, so this is fixed once, before any new
+#   run is looked at, and not changed afterwards. The best layer may still be shown, but only
+#   with its max-over-layers corrected p-value (p_corr). lapa/gender is the run it was chosen
+#   on; its report must say so.
+
+fixed_depth:
+  layer: 20
+  n_layers: 48 # rel_depth = 20 / 48 = 0.417
+  position: last_subtok
+  chosen_on:
+    model: lapa-12b-instruct
+    bias: gender
+  date: 2026-11-21
+  rule: >-
+    Middle of the lapa/gender plateau in WP5 (last_subtok, layers 15-26 of 48, pairwise
+    accuracy 0.84-0.87 throughout; midpoint 20.5, rounded down). Not the peak layer (22 for
+    pairwise, 20 for per-sentence accuracy).

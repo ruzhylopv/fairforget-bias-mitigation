@@ -90,13 +90,24 @@ misspelled pair, see `config/rq2/gender.yaml`). Code: `src/probing/`. Every step
      probes of each shuffle (seeds with every probe only). Smallest p is 1/(B+1).
    - `ci.csv`: 2,000 resamples of the 40 targets (all rows of each drawn target), the same
      draws for every probe and the baseline, so the gaps are paired: `gap*` = probe − `ell`
-     (predictability), `gap_lex*` = probe − layer 0 of the same position (lexical baseline,
-     NaN on the `ell` row). The fitted probes are treated as fixed (no refitting variance).
+     (predictability), `gap_layer0*` = probe − layer 0 of the same position (lexical
+     baseline: the word's identity, no context; NaN on the `ell` row), for every metric and
+     subset. RQ2 needs the probe above both. The fitted probes are treated as fixed (no
+     refitting variance). `rel_depth` = layer / n_layers (also in `summary.csv`), with
+     n_layers the decoder layers (48 lapa/gemma3, 36 qwen3, 32 Llama), read from
+     `acts/run.json`.
    - `robustness_no_misspellings.csv`: the summary without the pairs whose word is listed
      under `misspelled` in `config/rq2/{bias}.yaml` (gender: `mainicure`, `uncertanties`,
      `forebearance`), from the stored predictions (no refit).
    - `gate2.txt`: the checklist as far as it can be computed (null band, fold balance, folds
-     shared by probe and baseline and reproducing `summary.csv`, C grid).
+     shared by probe and baseline and reproducing `summary.csv`, C grid), then the probe at
+     the **fixed depth** and the peak layer.
+   - **Fixed depth** (`config/rq2/report.yaml`): chosen once, 2026-11-21, on lapa/gender
+     before any other run was looked at: layer 20 of 48 (`rel_depth` 0.417, `last_subtok`),
+     the middle of the WP5 plateau (layers 15–26), not its peak. Every new run is reported at
+     its nearest layer (qwen3 15, Llama 13, gemma3 20), with the per-probe p. The best layer
+     may still be shown, but only with `p_corr`. lapa/gender is marked as the run the depth
+     was chosen on (not an independent test).
 
 To test steps 3–4 without a GPU, `scripts/make_fake_acts.py` writes the real meta plus Gaussian
 activations with a signal planted at chosen layers (`--signal 20,21,22 --delta 2 --root ...`).

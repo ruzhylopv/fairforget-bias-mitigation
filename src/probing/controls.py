@@ -18,8 +18,8 @@ Outputs (small, in ``run_paths(model, bias).results`` = ``results/rq2/{bias}/{mo
 
     null_scores.csv                   seed, position, layer, scores (as summary.csv), C per fold
     pvalues.csv                       position, layer, metric, real, p, p_corr, B
-    ci.csv                            position, layer, metric, estimate, low, high, gap (vs
-                                      ell), gap_lex (vs layer 0), their CIs
+    ci.csv                            position, layer, rel_depth, metric, estimate, low, high,
+                                      gap (vs ell), gap_layer0 (vs layer 0), their CIs
     robustness_no_misspellings.csv    position, layer, metric, all_pairs, no_misspellings, change
     c_grid_low.csv                    cgrid: scores with the new grid next to summary.csv
     gate2.txt                         the checklist, as printed by stats
@@ -46,7 +46,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from probing.io import POSITIONS, bias_config, load_layer, load_meta, record_run, run_paths
+from probing.io import (
+    POSITIONS,
+    bias_config,
+    chosen_on,
+    fixed_layer,
+    load_layer,
+    load_meta,
+    n_decoder_layers,
+    record_run,
+    rel_depth,
+    report_config,
+    run_paths,
+)
 from probing.probe import (
     GRID,
     N_INNER,
@@ -382,9 +394,11 @@ def bootstrap_ci(
     the same draws, for two gaps:
 
     * ``gap*``: entry - ``baseline`` (predictability, ``ell``);
-    * ``gap_lex*``: entry - the probe at ``lexical_layer`` (the lexical baseline: the token
+    * ``gap_layer0*``: entry - the probe at ``lexical_layer`` (the lexical baseline: the token
       embedding, no context) of the same position. NaN for the baseline and when that layer
       is not in ``preds``.
+
+    Every metric and subset of ``CI_METRICS`` (acc, acc_pair, logloss; all, _tfirst, _tafter).
 
     ``share_*_le0`` is the share of resamples where the gap is <= 0 (for log-loss, lower is
     better: read the gap's sign)."""
@@ -421,7 +435,7 @@ def bootstrap_ci(
                     "low": np.nanpercentile(boot, lo),
                     "high": np.nanpercentile(boot, hi),
                     **gap_cols("gap", est, boot, base[m]),
-                    **gap_cols("gap_lex", est, boot, None if lex is None else lex[m]),
+                    **gap_cols("gap_layer0", est, boot, None if lex is None else lex[m]),
                     "R": R,
                 }
             )
@@ -720,6 +734,8 @@ def main(argv=None):
             R=args.n_boot,
             seed=args.boot_seed,
         )
+        n_layers = n_decoder_layers(paths)
+        ci.insert(2, "rel_depth", rel_depth(ci["layer"], n_layers))
         ci.to_csv(results / "ci.csv", index=False)
         print(f"ci.csv: {len(ci)} rows, R = {args.n_boot} ({time.time() - t0:.0f}s)")
 
@@ -743,6 +759,7 @@ def main(argv=None):
         cgrid = pd.read_csv(cg_path) if cg_path.exists() else None
 
         report = [format_gate(gate_checks(ctx, summary, preds, null, cgrid)), ""]
+        report += fixed_depth_report(ci, pv, paths, n_layers)
         report += peak_report(ci, rob, pv, null)
         text = "\n".join(report)
         (results / "gate2.txt").write_text(text + "\n", encoding="utf-8")
@@ -755,13 +772,50 @@ def main(argv=None):
                 "boot_seed": args.boot_seed,
                 "null_seeds_B": None if pv is None else int(pv["B"].iloc[0]),
                 "misspelled": misspelled,
+                "n_layers": n_layers,
+                "fixed_depth": report_config()["fixed_depth"]
+                | {"layer_this_run": fixed_layer(n_layers)},
             },
         )
         print("\nGate 2\n" + text)
 
 
+def fixed_depth_report(ci, pv, paths, n_layers, cfg=None) -> list:
+    """Lines for the fixed depth of ``config/rq2/report.yaml``: the run's nearest layer, its
+    estimate and both gaps (no selection over layers, so p is the per-probe p-value)."""
+    cfg = cfg or report_config()
+    fd = cfg["fixed_depth"]
+    k, pos = fixed_layer(n_layers, cfg), fd["position"]
+    note = (
+        " (CHOSEN ON THIS RUN: not an independent test)"
+        if chosen_on(paths, cfg)
+        else f" (fixed {fd['date']} on {fd['chosen_on']['model']}/{fd['chosen_on']['bias']})"
+    )
+    lines = [
+        f"fixed depth {fd['rel_depth']:.3f} = layer {k} of {n_layers}, {pos}{note}",
+    ]
+    for m in ("acc_pair", "acc"):
+        d = ci[(ci["position"] == pos) & (ci["layer"] == k) & (ci["metric"] == m)]
+        if not len(d):
+            lines.append(f"  {m}: layer {k} not in ci.csv")
+            continue
+        r = d.iloc[0]
+        line = (
+            f"  {m}: {r.estimate:.3f} [{r.low:.3f}, {r.high:.3f}], gap vs ell {r.gap:+.3f} "
+            f"[{r.gap_low:+.3f}, {r.gap_high:+.3f}], gap vs layer {LEXICAL_LAYER} "
+            f"{r.gap_layer0:+.3f} [{r.gap_layer0_low:+.3f}, {r.gap_layer0_high:+.3f}]"
+        )
+        if pv is not None:
+            q = pv[(pv["position"] == pos) & (pv["layer"] == k) & (pv["metric"] == m)]
+            if len(q):
+                line += f", p {q.p.iloc[0]:.3f} (B {q.B.iloc[0]})"
+        lines.append(line)
+    return lines
+
+
 def peak_report(ci, rob, pv, null) -> list:
-    """Lines for the card: null range, CI and gap at the peak, p_corr, misspelling change."""
+    """Lines for the card: null range, CI and gap at the peak (the best layer: shown with p_corr,
+    which corrects for picking it), misspelling change."""
     lines = []
     for m in ("acc_pair", "acc"):
         c = ci[(ci["metric"] == m) & (ci["position"] != BASELINE[0])]
@@ -783,10 +837,10 @@ def peak_report(ci, rob, pv, null) -> list:
                 f"  peak {pos} layer {int(r.layer)}: {r.estimate:.3f} [{r.low:.3f}, {r.high:.3f}],"
                 f" gap vs ell {r.gap:+.3f} [{r.gap_low:+.3f}, {r.gap_high:+.3f}]"
             )
-            if not np.isnan(r.gap_lex):
+            if not np.isnan(r.gap_layer0):
                 line += (
-                    f", gap vs layer {LEXICAL_LAYER} {r.gap_lex:+.3f} "
-                    f"[{r.gap_lex_low:+.3f}, {r.gap_lex_high:+.3f}]"
+                    f", gap vs layer {LEXICAL_LAYER} {r.gap_layer0:+.3f} "
+                    f"[{r.gap_layer0_low:+.3f}, {r.gap_layer0_high:+.3f}]"
                 )
             if pv is not None:
                 q = pv[(pv["position"] == pos) & (pv["layer"] == r.layer) & (pv["metric"] == m)]

@@ -178,9 +178,50 @@ def test_bootstrap_gap_vs_layer0_is_paired_and_per_position():
         ["position", "layer", "metric"]
     )
     l0, l3, l5 = (ci.loc[("first_diff", k, "acc_pair")] for k in (0, 3, 5))
-    assert l0["gap_lex"] == 0 and l0["gap_lex_low"] == 0 and l0["gap_lex_high"] == 0
-    assert l5["gap_lex_low"] == 0 and l5["gap_lex_high"] == 0  # same draws as layer 0
-    assert l3["gap_lex"] == pytest.approx(l3["estimate"] - l0["estimate"])
-    assert l3["gap_lex_low"] < l3["gap_lex"] < l3["gap_lex_high"]
-    assert np.isnan(ci.loc[("last_subtok", 3, "acc_pair"), "gap_lex"])
-    assert np.isnan(ci.loc[(controls.BASELINE[0], -1, "acc_pair"), "gap_lex"])
+    assert l0["gap_layer0"] == 0 and l0["gap_layer0_low"] == 0 and l0["gap_layer0_high"] == 0
+    assert l5["gap_layer0_low"] == 0 and l5["gap_layer0_high"] == 0  # same draws as layer 0
+    assert l3["gap_layer0"] == pytest.approx(l3["estimate"] - l0["estimate"])
+    assert l3["gap_layer0_low"] < l3["gap_layer0"] < l3["gap_layer0_high"]
+    assert np.isnan(ci.loc[("last_subtok", 3, "acc_pair"), "gap_layer0"])
+    assert np.isnan(ci.loc[(controls.BASELINE[0], -1, "acc_pair"), "gap_layer0"])
+
+
+def test_gap_vs_layer0_uses_the_same_draws_as_the_ell_gap():
+    """If layer 0 predicts exactly like the ell baseline, the two gaps and their CIs must be
+    identical for every probe, metric and subset: only possible with the same target draws."""
+    y, groups, flag, preds = boot_inputs()
+    preds = {("first_diff", 0): preds[controls.BASELINE], **preds}
+    ci = controls.bootstrap_ci(y, groups, flag, preds, R=300)
+    probes = ci[ci["position"] != controls.BASELINE[0]]
+
+    assert set(probes["metric"]) == set(controls.CI_METRICS)
+    assert {"_tfirst", "_tafter"} <= {m[m.index("_t") :] for m in controls.CI_METRICS if "_t" in m}
+    for col in ("", "_low", "_high"):
+        np.testing.assert_array_equal(probes[f"gap{col}"], probes[f"gap_layer0{col}"])
+    np.testing.assert_array_equal(probes["share_gap_le0"], probes["share_gap_layer0_le0"])
+    l3 = probes[(probes["layer"] == 3) & (probes["metric"] == "acc_pair_tafter")].iloc[0]
+    assert l3["gap_layer0_low"] < l3["gap_layer0"] < l3["gap_layer0_high"]
+
+
+def test_fixed_depth_report_marks_the_run_it_was_chosen_on(tmp_path):
+    cfg = {
+        "fixed_depth": {
+            "layer": 20,
+            "n_layers": 48,
+            "rel_depth": 20 / 48,
+            "position": "first_diff",
+            "chosen_on": {"model": "m", "bias": "gender"},
+            "date": "2026-11-21",
+        }
+    }
+    y, groups, flag, preds = boot_inputs()
+    z, p = preds[("first_diff", 3)]
+    preds = {("first_diff", 0): preds[controls.BASELINE], ("first_diff", 3): (z, p), **preds}
+    ci = controls.bootstrap_ci(y, groups, flag, preds, R=50)
+
+    # 8 layers: 20/48 * 8 = 3.33 -> layer 3
+    own = controls.fixed_depth_report(ci, None, run_paths("m", "gender", root=tmp_path), 8, cfg)
+    other = controls.fixed_depth_report(ci, None, run_paths("m", "race", root=tmp_path), 8, cfg)
+    assert "layer 3 of 8" in own[0] and "CHOSEN ON THIS RUN" in own[0]
+    assert "CHOSEN" not in other[0] and "fixed 2026-11-21 on m/gender" in other[0]
+    assert own[1].startswith("  acc_pair:") and "gap vs layer 0" in own[1]

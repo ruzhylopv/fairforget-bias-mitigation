@@ -130,6 +130,54 @@ def test_bias_config_errors(tmp_path, monkeypatch):
         io.bias_config("race")
 
 
+# --------------------------------------------------------------------------- depth
+
+
+def test_n_decoder_layers_from_the_extraction_run_json(paths):
+    paths.acts.mkdir(parents=True)
+    (paths.acts / "run.json").write_text(json.dumps({"n_hidden_states": 49}))
+    assert io.n_decoder_layers(paths) == 48
+
+
+def test_n_decoder_layers_from_the_model_config(paths, tmp_path, monkeypatch):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    monkeypatch.setattr(io, "resolve_model", lambda name: str(model_dir))
+    with pytest.raises(FileNotFoundError, match="unknown"):
+        io.n_decoder_layers(paths)
+    (model_dir / "config.json").write_text(json.dumps({"num_hidden_layers": 36}))
+    assert io.n_decoder_layers(paths) == 36
+    gemma3 = {"text_config": {"num_hidden_layers": 48}, "vision_config": {}}
+    (model_dir / "config.json").write_text(json.dumps(gemma3))
+    assert io.n_decoder_layers(paths) == 48
+
+
+def test_rel_depth_is_layer_over_n_layers_and_nan_for_the_baseline():
+    np.testing.assert_allclose(io.rel_depth([0, 24, 48, -1], 48), [0, 0.5, 1, np.nan])
+    assert io.rel_depth(18, 36) == 0.5
+
+
+def test_fixed_depth_is_layer_20_of_48_and_maps_to_the_nearest_layer():
+    cfg = io.report_config()
+    fd = cfg["fixed_depth"]
+    assert (fd["layer"], fd["n_layers"], fd["position"]) == (20, 48, "last_subtok")
+    assert fd["rel_depth"] == pytest.approx(0.4167, abs=1e-4) and fd["date"] == "2026-11-21"
+    assert fd["chosen_on"] == {"model": "lapa-12b-instruct", "bias": "gender"}
+    # lapa / gemma3, qwen3, Llama-3.1: 20.0, 15.0, 13.33
+    assert [io.fixed_layer(n, cfg) for n in (48, 36, 32)] == [20, 15, 13]
+    half = {"fixed_depth": {"layer": 1, "n_layers": 4}}  # 1/4 of 2 layers = 0.5 -> 1
+    assert io.fixed_layer(2, half) == 1
+    assert io.chosen_on(io.run_paths("lapa-12b-instruct", "gender"), cfg)
+    assert not io.chosen_on(io.run_paths("lapa-12b-instruct", "race"), cfg)
+
+
+def test_report_config_checks_fixed_depth(tmp_path, monkeypatch):
+    monkeypatch.setattr(io, "repo_path", lambda rel: tmp_path / "report.yaml")
+    (tmp_path / "report.yaml").write_text("fixed_depth:\n  layer: 20\n")
+    with pytest.raises(ValueError, match="needs"):
+        io.report_config()
+
+
 # --------------------------------------------------------------------------- run.json
 
 

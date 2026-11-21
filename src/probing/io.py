@@ -14,7 +14,11 @@ and every step reads and writes through it::
 layer file. Rows come pair by pair, stereotype first, so rows 2i and 2i+1 are one StereoSet item.
 Dates and commits go into ``run.json``, never into folder names.
 
-Per-bias settings (items left out, misspelled words) are in ``config/rq2/{bias}.yaml``.
+Per-bias settings (items left out, misspelled words) are in ``config/rq2/{bias}.yaml``; the
+fixed reporting depth is in ``config/rq2/report.yaml``.
+
+Depth across models: ``rel_depth = k / n_layers``, with k the ``hidden_states`` index and
+n_layers the number of decoder layers (48 for lapa and gemma3, 36 for qwen3, 32 for Llama).
 """
 
 import datetime
@@ -28,7 +32,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from rmu.config import PROJECT_ROOT, get, repo_path
+from rmu.config import PROJECT_ROOT, get, repo_path, resolve_model
 
 # Token positions with activations on disk, and the meta column holding each one's index.
 # Indices are negative (counted from the end), so they work on left-padded batches unchanged.
@@ -38,6 +42,7 @@ POSITION_COLUMNS = {"first_diff": "idx_first_diff", "last_subtok": "idx_last_sub
 BIAS_TYPES = ("gender", "profession", "race", "religion")
 RESULTS_ROOT = "results/rq2"  # in the repo
 BIAS_CONFIG_DIR = "config/rq2"  # in the repo
+REPORT_CONFIG = "config/rq2/report.yaml"  # in the repo
 
 META_COLUMNS = [
     "row",
@@ -163,6 +168,66 @@ def bias_config(bias: str) -> dict:
     if not isinstance(misspelled, list) or not all(isinstance(w, str) for w in misspelled):
         raise ValueError(f"{path}: misspelled must be a list of words")
     return {"exclude_items": dict(exclude), "misspelled": list(misspelled)}
+
+
+# --------------------------------------------------------------------------- depth
+
+
+def n_decoder_layers(paths: RunPaths) -> int:
+    """Decoder layers of the run's model (= hidden states - 1; k = 0 is the embedding output).
+
+    From ``{acts}/run.json`` (written by probing.extract), else from the model's config.json.
+    """
+    run = paths.acts / "run.json"
+    if run.exists():
+        info = json.loads(run.read_text(encoding="utf-8"))
+        if "n_hidden_states" in info:
+            return int(info["n_hidden_states"]) - 1
+    cfg = Path(resolve_model(paths.model)) / "config.json"
+    if cfg.exists():
+        c = json.loads(cfg.read_text(encoding="utf-8"))
+        return int(c.get("text_config", c)["num_hidden_layers"])  # Gemma 3: text_config
+    raise FileNotFoundError(
+        f"number of layers of {paths.model} unknown: no n_hidden_states in {run} and no {cfg}"
+    )
+
+
+def rel_depth(layer, n_layers: int):
+    """``layer / n_layers`` (NaN for negative layers, i.e. the ell baseline row)."""
+    layer = np.asarray(layer, dtype=float)
+    out = np.where(layer >= 0, layer / n_layers, np.nan)
+    return float(out) if out.ndim == 0 else out
+
+
+def report_config() -> dict:
+    """``config/rq2/report.yaml``. ``fixed_depth`` gets ``rel_depth`` = layer / n_layers."""
+    path = repo_path(REPORT_CONFIG)
+    with open(path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    fd = cfg.get("fixed_depth") or {}
+    need = {"layer", "n_layers", "position", "chosen_on", "date", "rule"}
+    if need - set(fd):
+        raise ValueError(f"{path}: fixed_depth needs {sorted(need - set(fd))}")
+    if fd["position"] not in POSITIONS:
+        raise ValueError(f"{path}: fixed_depth.position must be one of {POSITIONS}")
+    if not 0 <= fd["layer"] <= fd["n_layers"]:
+        raise ValueError(f"{path}: fixed_depth.layer must be in 0..n_layers")
+    fd["rel_depth"] = fd["layer"] / fd["n_layers"]
+    fd["date"] = str(fd["date"])
+    return cfg
+
+
+def fixed_layer(n_layers: int, cfg: dict | None = None) -> int:
+    """The layer nearest the fixed depth in a model with ``n_layers`` decoder layers (halves
+    round up)."""
+    fd = (cfg or report_config())["fixed_depth"]
+    return int(np.floor(fd["layer"] * n_layers / fd["n_layers"] + 0.5))
+
+
+def chosen_on(paths: RunPaths, cfg: dict | None = None) -> bool:
+    """True if the fixed depth was chosen on this run (the report must say so)."""
+    on = (cfg or report_config())["fixed_depth"]["chosen_on"]
+    return (on.get("model"), on.get("bias")) == (paths.model, paths.bias)
 
 
 # --------------------------------------------------------------------------- run.json

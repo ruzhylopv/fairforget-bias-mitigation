@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import json
 
 import numpy as np
 
@@ -84,6 +85,11 @@ def main():
             x = fake_layer(labels, args.hidden, k, args.seed, signal, args.delta, u, position)
             path = save_layer(x, paths, position, k)
         print(f"{position}: {len(layers)} layers, {x.shape} -> {path.parent}")
+    # As probing.extract writes it; the probes read the number of layers from here.
+    info = {"model": args.model, "bias": args.bias, "fake": True}
+    info |= {"n_hidden_states": N_HIDDEN_STATES, "hidden_size": args.hidden}
+    info["store_dtype"] = "float16"
+    (paths.acts / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     planted = sorted(signal & set(layers))
     print(f"meta: {paths.meta} ({len(meta)} rows)")
     print(f"planted layers: {planted or 'none'} (delta = {args.delta}, seed = {args.seed})")

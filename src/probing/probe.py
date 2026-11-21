@@ -20,7 +20,8 @@ Outputs (``probing.io.run_paths(model, bias)``)::
     {probes}/{position}/preds_layer_kk.csv    row, fold, z, p, C
     {probes}/{position}/probe_layer_kk.npz    w_raw, b_raw, mu, scale, C
     {probes}/run.json                         settings (the grid is reused by probing.controls)
-    {results}/summary.csv                     one row per position x layer + baseline
+    {results}/summary.csv                     one row per position x layer + baseline, with
+                                              rel_depth = layer / n_layers (NaN on the baseline)
     {results}/run.json                        the same settings, as step "probe"
 
 with ``{probes}`` = ``{rq2_root}/{bias}/{model}/probes`` and ``{results}`` =
@@ -49,7 +50,16 @@ from sklearn.model_selection import GridSearchCV, GroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from probing.io import POSITIONS, git_commit, load_layer, load_meta, record_run, run_paths
+from probing.io import (
+    POSITIONS,
+    git_commit,
+    load_layer,
+    load_meta,
+    n_decoder_layers,
+    record_run,
+    rel_depth,
+    run_paths,
+)
 
 GRID = (1e-4, 1e-3, 1e-2, 1e-1, 1.0)
 BASELINE_C = 1e4
@@ -319,6 +329,9 @@ def main(argv=None):
     if unknown:
         raise ValueError(f"unknown positions {sorted(unknown)}; expected {POSITIONS}")
     layers = parse_layers(args.layers)
+    n_layers = n_decoder_layers(paths)
+    if max(layers) > n_layers:
+        raise ValueError(f"--layers goes to {max(layers)}; {args.model} has {n_layers} layers")
 
     meta = load_meta(paths)
     y = meta["S"].to_numpy()
@@ -366,6 +379,7 @@ def main(argv=None):
         )
 
     summary = pd.DataFrame([base_row, *rows])
+    summary.insert(2, "rel_depth", rel_depth(summary["layer"], n_layers))
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(summary_path, index=False)
     high = summary[summary["C_edge"].str.contains("high", na=False)]
@@ -376,6 +390,7 @@ def main(argv=None):
         "n_rows": len(meta),
         "positions": positions,
         "layers": layers,
+        "n_layers": n_layers,
         "grid": list(grid),
         "inner_scoring": INNER_SCORING,
         "baseline_C": BASELINE_C,
