@@ -85,18 +85,32 @@ def pair_flag(meta: pd.DataFrame) -> np.ndarray:
     return np.repeat(pair, 2)
 
 
-def pairwise_accuracy(z, mask=None) -> float:
-    """Share of pairs (rows 2i = stereotype, 2i+1 = anti) with z[2i] > z[2i+1]; ties count 1/2.
+def pair_correct(z, y=None) -> np.ndarray:
+    """Per pair (rows 2i, 2i+1): 1 if the row labelled 1 has the higher z, 0 if lower, 1/2 tie.
 
-    ``mask`` (per row, constant within a pair) selects pairs.
+    Without ``y`` row 2i is the labelled-1 row (the real labels). With the WP6 null labels
+    (swapped within some pairs) ``y`` says which row of each pair counts as the stereotype.
     """
     z = np.asarray(z, dtype=float)
-    zs, za = z[0::2], z[1::2]
-    keep = np.ones(len(zs), bool) if mask is None else np.asarray(mask, bool)[0::2]
+    d = z[0::2] - z[1::2]
+    if y is not None:
+        y = np.asarray(y)
+        if not (y[0::2] + y[1::2] == 1).all():
+            raise ValueError("each pair needs one row with y=1 and one with y=0")
+        d = np.where(y[0::2] == 1, d, -d)
+    return (d > 0) + 0.5 * (d == 0)
+
+
+def pairwise_accuracy(z, mask=None, y=None) -> float:
+    """Share of pairs (rows 2i = stereotype, 2i+1 = anti) with z[2i] > z[2i+1]; ties count 1/2.
+
+    ``mask`` (per row, constant within a pair) selects pairs; ``y`` see ``pair_correct``.
+    """
+    c = pair_correct(z, y)
+    keep = np.ones(len(c), bool) if mask is None else np.asarray(mask, bool)[0::2]
     if not keep.any():
         return float("nan")
-    zs, za = zs[keep], za[keep]
-    return float(((zs > za) + 0.5 * (zs == za)).mean())
+    return float(c[keep].mean())
 
 
 def scores(y, z, p, flag) -> dict:
@@ -109,7 +123,7 @@ def scores(y, z, p, flag) -> dict:
             out |= {f"acc{suffix}": np.nan, f"acc_pair{suffix}": np.nan, f"logloss{suffix}": np.nan}
             continue
         out[f"acc{suffix}"] = float(((z[m] > 0).astype(int) == y[m]).mean())
-        out[f"acc_pair{suffix}"] = pairwise_accuracy(z, m)
+        out[f"acc_pair{suffix}"] = pairwise_accuracy(z, m, y)
         out[f"logloss{suffix}"] = float(log_loss(y[m], p[m], labels=[0, 1]))
         out[f"n_pairs{suffix}"] = int(m.sum() // 2)
     return out
