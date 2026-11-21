@@ -8,7 +8,6 @@ from probing.extract import (
     FLOAT16_MAX,
     choose_store_dtype,
     gather_positions,
-    git_commit,
     word_logprob,
 )
 
@@ -130,16 +129,3 @@ def test_store_dtype_falls_back_to_float32_only_on_overflow():
     assert choose_store_dtype("float32", ok) == "float32"
     with pytest.raises(ValueError, match="overflows float16"):
         choose_store_dtype("float16", big)
-
-
-def test_git_commit_reads_dot_git_without_the_git_binary(tmp_path, monkeypatch):
-    sha = "a" * 40
-    (tmp_path / ".git" / "refs" / "heads").mkdir(parents=True)
-    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
-    (tmp_path / ".git" / "refs" / "heads" / "main").write_text(sha + "\n")
-    monkeypatch.setenv("PATH", "")  # no git on compute nodes
-    assert git_commit(tmp_path) == sha
-
-    (tmp_path / ".git" / "refs" / "heads" / "main").unlink()
-    (tmp_path / ".git" / "packed-refs").write_text(f"# pack-refs\n{'b' * 40} refs/heads/main\n")
-    assert git_commit(tmp_path) == "b" * 40

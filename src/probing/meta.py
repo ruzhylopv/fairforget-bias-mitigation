@@ -1,10 +1,11 @@
 """Build the RQ2 metadata table (one row per sentence) from the tokenization check.
 
 The token positions come from ``results/tokenization-check-nov17/pairs.csv``; nothing is
-re-tokenized here. Positions depend on the tokenizer, so there is one meta file per model.
+re-tokenized here. Positions depend on the tokenizer, so there is one meta file per model and
+bias type: ``run_paths(model, bias).meta``. Items left out are listed in ``config/rq2/{bias}.yaml``.
 
 Usage:
-    python -m probing.meta --model lapa-12b-instruct --bias_types gender [--out PATH]
+    python -m probing.meta --model lapa-12b-instruct --bias gender [--root PATH]
 """
 
 import argparse
@@ -12,18 +13,11 @@ import argparse
 import numpy as np
 import pandas as pd
 
-from probing.io import META_COLUMNS, meta_path, validate_meta, write_meta
+from probing.io import META_COLUMNS, bias_config, record_run, run_paths, save_meta, validate_meta
 from rmu.config import repo_path
 
 PAIRS_CSV = "results/tokenization-check-nov17/pairs.csv"
 PUNCT = (".", "!", "?")
-
-# StereoSet items left out of RQ2 (item_id -> reason). Both sentences of a pair go together.
-EXCLUDE_ITEMS = {
-    "bdccea984366464e4a58c7a257a39abf": (
-        '"A man has testoserone." / "A man has estrogen.": misspelled, not a meaningful pair'
-    ),
-}
 
 
 def word_start(sentence: str, word: str, other: str) -> int:
@@ -80,18 +74,20 @@ def _side_rows(pairs: pd.DataFrame, side: str, other: str, label: int, model: st
     )
 
 
-def build_meta(
-    model: str, bias_types=("gender",), pairs_csv=PAIRS_CSV, exclude=EXCLUDE_ITEMS
-) -> pd.DataFrame:
-    """Meta table for ``model``: pairs.csv order, stereotype row first in each pair.
+def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.DataFrame:
+    """Meta table for ``model`` on bias type ``bias``: pairs.csv order, stereotype row first in
+    each pair.
 
-    Items in ``exclude`` (item_id -> reason) are dropped, both sentences together.
+    Items in ``exclude`` (item_id -> reason; default: ``exclude_items`` of
+    ``config/rq2/{bias}.yaml``) are dropped, both sentences together.
     """
+    if exclude is None:
+        exclude = bias_config(bias)["exclude_items"]
     pairs = pd.read_csv(repo_path(pairs_csv), keep_default_na=False, dtype=str)
-    pairs = pairs[(pairs["model"] == model) & pairs["bias_type"].isin(list(bias_types))]
-    pairs = pairs[~pairs["item_id"].isin(list(exclude or {}))]
+    pairs = pairs[(pairs["model"] == model) & (pairs["bias_type"] == bias)]
+    pairs = pairs[~pairs["item_id"].isin(list(exclude))]
     if pairs.empty:
-        raise ValueError(f"no pairs for model {model!r} and bias types {list(bias_types)}")
+        raise ValueError(f"no pairs for model {model!r} and bias type {bias!r}")
     pairs = pairs.reset_index(drop=True)
     for prefix in ("n_tok", "len", "first_diff", "last_subtok_from_end"):
         for side in ("stereo", "anti"):
@@ -109,11 +105,12 @@ def build_meta(
     return df
 
 
-def describe(df: pd.DataFrame) -> str:
+def describe(df: pd.DataFrame, n_excluded: int = 0) -> str:
     """Short summary of a meta table, for the CLI and quick checks."""
     stereo = df[df["S"] == 1]
+    bias = ", ".join(sorted(set(df["bias_type"])))
     lines = [
-        f"rows: {len(df)} (excluded items: {len(EXCLUDE_ITEMS)}, see probing.meta.EXCLUDE_ITEMS)",
+        f"rows: {len(df)} (excluded items: {n_excluded}, see config/rq2/{bias}.yaml)",
         f"targets: {df['target'].nunique()}",
         f"S=1 / S=0: {(df['S'] == 1).sum()} / {(df['S'] == 0).sum()}",
         f"pairs with target_after_word (stereotype row): {int(stereo['target_after_word'].sum())}",
@@ -130,20 +127,21 @@ def describe(df: pd.DataFrame) -> str:
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True, help="model name as in pairs.csv")
-    ap.add_argument(
-        "--bias_types",
-        nargs="+",
-        default=["gender"],
-        help="space- or comma-separated StereoSet bias types (default: gender)",
-    )
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
     ap.add_argument("--pairs_csv", default=PAIRS_CSV)
-    ap.add_argument("--out", default=None, help="default: {rq2_root}/meta/{model}.csv")
+    ap.add_argument("--root", default=None, help="data root (default: paths.rq2_root)")
     args = ap.parse_args()
 
-    bias_types = [b for arg in args.bias_types for b in arg.split(",") if b]
-    df = build_meta(args.model, bias_types, args.pairs_csv)
-    out = write_meta(df, args.out or meta_path(args.model))
-    print(describe(df))
+    paths = run_paths(args.model, args.bias, root=args.root)
+    exclude = bias_config(args.bias)["exclude_items"]
+    df = build_meta(args.model, args.bias, args.pairs_csv, exclude)
+    out = save_meta(df, paths)
+    record_run(
+        paths,
+        "meta",
+        {"pairs_csv": str(args.pairs_csv), "n_rows": len(df), "excluded_items": exclude},
+    )
+    print(describe(df, len(exclude)))
     print(f"Wrote {out}")
 
 

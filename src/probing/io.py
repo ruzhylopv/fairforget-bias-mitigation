@@ -1,27 +1,43 @@
 """File layout of the RQ2 probing data: activations (X) and the metadata table (y, groups, ...).
 
-Everything lives under ``paths.rq2_root`` (config/default.yaml)::
+One run = one model on one StereoSet bias type. ``run_paths(model, bias)`` gives all its paths,
+and every step reads and writes through it::
 
-    {rq2_root}/acts/{model}/{position}/layer_{kk:02d}.npy   float16 (or float32), (N, hidden)
-    {rq2_root}/meta/{model}.csv                              one row per sentence
+    {rq2_root}/{bias}/{model}/meta.csv                            one row per sentence
+    {rq2_root}/{bias}/{model}/acts/{position}/layer_{kk:02d}.npy  float16 or float32 (N, hidden)
+    {rq2_root}/{bias}/{model}/acts/run.json                       extraction provenance + stats
+    {rq2_root}/{bias}/{model}/probes/...                          folds, predictions, weights
+    results/rq2/{bias}/{model}/                                   small results, committed
+    results/rq2/{bias}/{model}/run.json                           date, commit, ... of each step
 
 ``kk`` indexes ``hidden_states`` (00 = embeddings). Row i of the meta CSV is row i of every
 layer file. Rows come pair by pair, stereotype first, so rows 2i and 2i+1 are one StereoSet item.
-Every path function takes an optional ``root`` that replaces ``rq2_root()`` (tests, fake data).
+Dates and commits go into ``run.json``, never into folder names.
+
+Per-bias settings (items left out, misspelled words) are in ``config/rq2/{bias}.yaml``.
 """
 
+import datetime
+import json
 import os
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
-from rmu.config import get
+from rmu.config import PROJECT_ROOT, get, repo_path
 
 # Token positions with activations on disk, and the meta column holding each one's index.
 # Indices are negative (counted from the end), so they work on left-padded batches unchanged.
 POSITIONS = ("first_diff", "last_subtok")
 POSITION_COLUMNS = {"first_diff": "idx_first_diff", "last_subtok": "idx_last_subtok"}
+# StereoSet intrasentence bias types.
+BIAS_TYPES = ("gender", "profession", "race", "religion")
+RESULTS_ROOT = "results/rq2"  # in the repo
+BIAS_CONFIG_DIR = "config/rq2"  # in the repo
 
 META_COLUMNS = [
     "row",
@@ -61,17 +77,163 @@ def rq2_root() -> Path:
     return get("paths.rq2_root")
 
 
-def meta_path(model: str, root=None) -> Path:
-    return Path(root or rq2_root()) / "meta" / f"{model}.csv"
+@dataclass(frozen=True)
+class RunPaths:
+    """Where one run (``model`` on bias type ``bias``) keeps its files; see the module doc."""
+
+    model: str
+    bias: str
+    data: Path  # big files: {rq2_root}/{bias}/{model}
+    results: Path  # small, committed: results/rq2/{bias}/{model}
+
+    @property
+    def meta(self) -> Path:
+        return self.data / "meta.csv"
+
+    @property
+    def acts(self) -> Path:
+        return self.data / "acts"
+
+    @property
+    def probes(self) -> Path:
+        return self.data / "probes"
+
+    @property
+    def summary(self) -> Path:
+        return self.results / "summary.csv"
+
+    @property
+    def run_json(self) -> Path:
+        return self.results / "run.json"
+
+    def layer(self, position: str, k: int) -> Path:
+        """Activations of ``hidden_states[k]`` at ``position`` (k = 0 is the embedding output)."""
+        if position not in POSITIONS:
+            raise ValueError(f"unknown position {position!r}; expected one of {POSITIONS}")
+        if int(k) != k or k < 0:
+            raise ValueError(f"layer index must be a non-negative integer, got {k!r}")
+        return self.acts / position / f"layer_{int(k):02d}.npy"
 
 
-def layer_path(model: str, position: str, k: int, root=None) -> Path:
-    """Activations of ``hidden_states[k]`` at ``position`` (k = 0 is the embedding output)."""
-    if position not in POSITIONS:
-        raise ValueError(f"unknown position {position!r}; expected one of {POSITIONS}")
-    if int(k) != k or k < 0:
-        raise ValueError(f"layer index must be a non-negative integer, got {k!r}")
-    return Path(root or rq2_root()) / "acts" / model / position / f"layer_{int(k):02d}.npy"
+def run_paths(model: str, bias: str, root=None, results_root=None) -> RunPaths:
+    """Paths of the run ``model`` x ``bias``.
+
+    ``root`` replaces ``rq2_root()`` (fake data, dry runs). The committed results then go to
+    ``{root}/results/{bias}/{model}`` instead of the repo, so a test run never overwrites real
+    results; ``results_root`` sets that folder's parent explicitly.
+    """
+    if not model or any(c in model for c in "/\\") or model.startswith("."):
+        raise ValueError(f"model must be a short name (no path), got {model!r}")
+    if bias not in BIAS_TYPES:
+        raise ValueError(f"unknown bias type {bias!r}; expected one of {BIAS_TYPES}")
+    if results_root is None:
+        results_root = repo_path(RESULTS_ROOT) if root is None else Path(root) / "results"
+    data_root = rq2_root() if root is None else Path(root)
+    return RunPaths(model, bias, Path(data_root) / bias / model, Path(results_root) / bias / model)
+
+
+# --------------------------------------------------------------------------- per-bias settings
+
+
+def bias_config(bias: str) -> dict:
+    """Settings of a bias type from ``config/rq2/{bias}.yaml``:
+
+    * ``exclude_items``: {item_id: reason}, pairs left out of the meta (both rows);
+    * ``misspelled``: attribute words whose pairs the robustness check drops.
+    """
+    if bias not in BIAS_TYPES:
+        raise ValueError(f"unknown bias type {bias!r}; expected one of {BIAS_TYPES}")
+    path = repo_path(f"{BIAS_CONFIG_DIR}/{bias}.yaml")
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} is missing: check the {bias} pairs and list the items to exclude and the "
+            "misspelled words there (empty lists are fine), see config/rq2/gender.yaml"
+        )
+    with open(path, encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    unknown = set(raw) - {"exclude_items", "misspelled"}
+    if unknown:
+        raise ValueError(f"{path}: unknown keys {sorted(unknown)}")
+    exclude = raw.get("exclude_items") or {}
+    misspelled = raw.get("misspelled") or []
+    if not isinstance(exclude, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in exclude.items()
+    ):
+        raise ValueError(f"{path}: exclude_items must map item_id -> reason (both strings)")
+    if not isinstance(misspelled, list) or not all(isinstance(w, str) for w in misspelled):
+        raise ValueError(f"{path}: misspelled must be a list of words")
+    return {"exclude_items": dict(exclude), "misspelled": list(misspelled)}
+
+
+# --------------------------------------------------------------------------- run.json
+
+
+def git_commit(repo: Path = PROJECT_ROOT):
+    """HEAD commit; read from .git directly when git is missing (compute nodes)."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    try:
+        git = repo / ".git"
+        if git.is_file():  # worktree: "gitdir: <path>"
+            git = Path(git.read_text().split(":", 1)[1].strip())
+        head = (git / "HEAD").read_text().strip()
+        if not head.startswith("ref:"):
+            return head
+        ref = head.split(":", 1)[1].strip()
+        common = git / "commondir"
+        roots = [git] + ([git / common.read_text().strip()] if common.exists() else [])
+        for root in roots:
+            if (root / ref).exists():
+                return (root / ref).read_text().strip()
+            packed = root / "packed-refs"
+            if packed.exists():
+                for line in packed.read_text().splitlines():
+                    if line.endswith(" " + ref):
+                        return line.split()[0]
+    except OSError:
+        pass
+    return None
+
+
+def _write_json(path: Path, obj) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
+def record_run(paths: RunPaths, step: str, info: dict | None = None, stamp: bool = True) -> Path:
+    """Add or replace ``step`` in ``results/.../run.json``: {model, bias, steps: {step: ...}}.
+
+    With ``stamp`` the entry starts with the current date, git commit and Slurm job id;
+    ``info`` (JSON-serialisable) follows. A run.json of another model or bias is an error.
+    """
+    path = paths.run_json
+    run = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if run and (run.get("model"), run.get("bias")) != (paths.model, paths.bias):
+        raise ValueError(
+            f"{path} belongs to {run.get('model')!r} / {run.get('bias')!r}, "
+            f"not {paths.model!r} / {paths.bias!r}"
+        )
+    entry = {}
+    if stamp:
+        entry = {
+            "date": datetime.datetime.now().isoformat(timespec="seconds"),
+            "git_commit": git_commit(),
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        }
+    entry |= info or {}
+    steps = run.get("steps", {})
+    steps[step] = entry
+    return _write_json(path, {"model": paths.model, "bias": paths.bias, "steps": steps})
 
 
 # --------------------------------------------------------------------------- metadata
@@ -97,15 +259,23 @@ def write_meta(df: pd.DataFrame, path) -> Path:
     return path
 
 
-def load_meta(model: str, root=None) -> pd.DataFrame:
-    return read_meta(meta_path(model, root))
+def _check_run(df: pd.DataFrame, paths: RunPaths) -> None:
+    """The meta's ``model`` and ``bias_type`` columns must name the run."""
+    for col, want in (("model", paths.model), ("bias_type", paths.bias)):
+        got = set(df[col]) if col in df else set()
+        if got != {want}:
+            raise ValueError(f"meta for {paths.model} / {paths.bias} has {col} {sorted(got)}")
 
 
-def save_meta(df: pd.DataFrame, model: str, root=None) -> Path:
-    models = set(df["model"]) if "model" in df else set()
-    if models != {model}:
-        raise ValueError(f"meta for {model!r} has model column values {sorted(models)}")
-    return write_meta(df, meta_path(model, root))
+def load_meta(paths: RunPaths) -> pd.DataFrame:
+    df = read_meta(paths.meta)
+    _check_run(df, paths)
+    return df
+
+
+def save_meta(df: pd.DataFrame, paths: RunPaths) -> Path:
+    _check_run(df, paths)
+    return write_meta(df, paths.meta)
 
 
 def _rows(mask) -> str:
@@ -182,15 +352,15 @@ def validate_meta(df: pd.DataFrame) -> None:
 # --------------------------------------------------------------------------- activations
 
 
-def load_layer(model: str, position: str, k: int, mmap: bool = True, root=None) -> np.ndarray:
+def load_layer(paths: RunPaths, position: str, k: int, mmap: bool = True) -> np.ndarray:
     """(N, hidden) activations as stored (float16, float32 for models that overflow it).
 
     Memory-mapped read-only by default.
     """
-    return np.load(layer_path(model, position, k, root), mmap_mode="r" if mmap else None)
+    return np.load(paths.layer(position, k), mmap_mode="r" if mmap else None)
 
 
-def save_layer(arr, model: str, position: str, k: int, root=None, dtype="float16") -> Path:
+def save_layer(arr, paths: RunPaths, position: str, k: int, dtype="float16") -> Path:
     """Write (N, hidden) activations as ``dtype`` (float16 by default, or float32).
 
     float16 tops out at 65504; models with larger outlier dimensions are stored as float32
@@ -205,10 +375,10 @@ def save_layer(arr, model: str, position: str, k: int, root=None, dtype="float16
         half = arr.astype(dtype, copy=False)
     if np.isfinite(arr).all() and not np.isfinite(half).all():
         raise ValueError(
-            f"{model} {position} layer {k}: {int((~np.isfinite(half)).sum())} values overflow "
-            f"float16 (max |x| = {float(np.abs(arr).max()):.4g})"
+            f"{paths.model} {position} layer {k}: {int((~np.isfinite(half)).sum())} values "
+            f"overflow float16 (max |x| = {float(np.abs(arr).max()):.4g})"
         )
-    path = layer_path(model, position, k, root)
+    path = paths.layer(position, k)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "wb") as f:

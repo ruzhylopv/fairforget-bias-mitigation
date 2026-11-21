@@ -14,7 +14,7 @@ the same grid (read from ``run.json``), the same ``scores``.
 * **cgrid**: the real labels with another grid (default 1e-6 .. 1e-3) for some layers; only
   scores and the chosen C are written, the WP5 predictions are not touched.
 
-Outputs (small, in ``--results``, default ``results/rq2-probing-nov21``)::
+Outputs (small, in ``run_paths(model, bias).results`` = ``results/rq2/{bias}/{model}``)::
 
     null_scores.csv                   seed, position, layer, scores (as summary.csv), C per fold
     pvalues.csv                       position, layer, metric, real, p, p_corr, B
@@ -23,14 +23,17 @@ Outputs (small, in ``--results``, default ``results/rq2-probing-nov21``)::
     robustness_no_misspellings.csv    position, layer, metric, all_pairs, no_misspellings, change
     c_grid_low.csv                    cgrid: scores with the new grid next to summary.csv
     gate2.txt                         the checklist, as printed by stats
+    run.json                          steps "controls null" / "controls cgrid" / "controls stats"
+
+The misspelled words come from ``config/rq2/{bias}.yaml``.
 
 Usage (on a CPU node; ``probing.probe`` must have run, see docs/rq2_probing.md)::
 
-    python -m probing.controls null --model lapa-12b-instruct --seeds 0-4
-    python -m probing.controls null --model lapa-12b-instruct --seeds 0-99   # resumes
-    python -m probing.controls cgrid --model lapa-12b-instruct --layers 0-7
-    python -m probing.controls stats --model lapa-12b-instruct
-    uv run python scripts/plot_controls.py --results results/rq2-probing-nov21   # laptop
+    python -m probing.controls null --model lapa-12b-instruct --bias gender --seeds 0-4
+    python -m probing.controls null --model lapa-12b-instruct --bias gender --seeds 0-99  # resumes
+    python -m probing.controls cgrid --model lapa-12b-instruct --bias gender --layers 0-7
+    python -m probing.controls stats --model lapa-12b-instruct --bias gender
+    uv run python scripts/plot_controls.py --model lapa-12b-instruct --bias gender   # laptop
 """
 
 import argparse
@@ -43,7 +46,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from probing.io import POSITIONS, load_layer, load_meta, rq2_root
+from probing.io import POSITIONS, bias_config, load_layer, load_meta, record_run, run_paths
 from probing.probe import (
     GRID,
     N_INNER,
@@ -59,14 +62,9 @@ from probing.probe import (
     scores,
     usable_cpus,
 )
-from rmu.config import repo_path
 
-RESULTS = "results/rq2-probing-nov21"
 BASELINE = ("baseline_ell", -1)
 LEXICAL_LAYER = 0  # lexical baseline: the probe on the token embedding (hidden_states[0])
-# Misspelled StereoSet attribute words with the lowest ell (testoserone is already excluded in
-# probing.meta.EXCLUDE_ITEMS). The whole pair is dropped.
-MISSPELLED = ("mainicure", "uncertanties", "forebearance")
 ACC_METRICS = tuple(f"{m}{s}" for s in SUBSETS for m in ("acc", "acc_pair"))
 CI_METRICS = tuple(f"{m}{s}" for s in SUBSETS for m in ("acc", "acc_pair", "logloss"))
 NULL_BAND = 0.03  # gate 2: shuffled-label accuracy within 0.50 +- 3 points
@@ -91,11 +89,12 @@ def flip_within_pairs(y, seed) -> np.ndarray:
     return np.where(np.repeat(swap, 2), 1 - y, y)
 
 
-def fit_task(model, position, k, root, y, groups, folds, flag, grid, seed=None) -> dict:
-    """One probe: nested CV (``fit_layer``) with the real labels (seed None) or the null labels
-    of ``seed``; returns the scores and the chosen C, not the predictions."""
+def fit_task(paths, position, k, y, groups, folds, flag, grid, seed=None) -> dict:
+    """One probe of the run ``paths``: nested CV (``fit_layer``) with the real labels (seed
+    None) or the null labels of ``seed``; returns the scores and the chosen C, not the
+    predictions."""
     t0 = time.time()
-    X = np.asarray(load_layer(model, position, k, root=root), dtype=np.float64)
+    X = np.asarray(load_layer(paths, position, k), dtype=np.float64)
     if X.shape[0] != len(y):
         raise ValueError(f"{position} layer {k}: {X.shape[0]} rows, meta has {len(y)}")
     y_fit = y if seed is None else flip_within_pairs(y, seed)
@@ -171,10 +170,9 @@ def run_null(ctx, seeds, positions, layers, path, n_jobs=-1):
                 write(baseline_task(ctx["ell"], ctx["y"], ctx["folds"], ctx["flag"], seed))
         tasks = [
             {
-                "model": ctx["model"],
+                "paths": ctx["paths"],
                 "position": p,
                 "k": k,
-                "root": ctx["root"],
                 "y": ctx["y"],
                 "groups": ctx["groups"],
                 "folds": ctx["folds"],
@@ -433,7 +431,7 @@ def bootstrap_ci(
 # --------------------------------------------------------------------------- misspellings
 
 
-def drop_pairs(meta, words=MISSPELLED) -> np.ndarray:
+def drop_pairs(meta, words) -> np.ndarray:
     """Row mask keeping the pairs where neither row's attribute word is in ``words``
     (case-insensitive, surrounding punctuation ignored)."""
     w = (
@@ -473,10 +471,11 @@ def robustness(meta, preds, keep) -> pd.DataFrame:
 # --------------------------------------------------------------------------- loading
 
 
-def load_context(model, root, out_dir) -> dict:
+def load_context(paths) -> dict:
     """Meta columns, the saved folds (checked against a fresh ``outer_folds``) and the grid of
-    the WP5 run (``run.json``)."""
-    meta = load_meta(model, root=root)
+    the WP5 run (``{probes}/run.json``)."""
+    meta = load_meta(paths)
+    out_dir = paths.probes
     folds_df = pd.read_csv(out_dir / "folds.csv", keep_default_na=False)
     folds = folds_df["fold"].to_numpy()
     if len(folds) != len(meta) or not (folds == outer_folds(meta)).all():
@@ -486,8 +485,7 @@ def load_context(model, root, out_dir) -> dict:
     run = out_dir / "run.json"
     grid = tuple(json.loads(run.read_text())["grid"]) if run.exists() else GRID
     return {
-        "model": model,
-        "root": root,
+        "paths": paths,
         "meta": meta,
         "y": meta["S"].to_numpy(),
         "groups": meta["target"].to_numpy(),
@@ -629,9 +627,12 @@ def main(argv=None):
     for name in ("null", "cgrid", "stats"):
         s = sub.add_parser(name)
         s.add_argument("--model", required=True)
-        s.add_argument("--root", default=None, help="data root (default: paths.rq2_root)")
-        s.add_argument("--out", default=None, help="WP5 outputs (default: {root}/probes/{model})")
-        s.add_argument("--results", default=RESULTS, help=f"result files (default {RESULTS})")
+        s.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
+        s.add_argument(
+            "--root",
+            default=None,
+            help="data root (default: paths.rq2_root); results then go to {root}/results",
+        )
         s.add_argument("--positions", default=",".join(POSITIONS))
         s.add_argument("--layers", default=None, help="default: every layer in summary.csv")
         s.add_argument("--n_jobs", type=int, default=-1)
@@ -641,13 +642,10 @@ def main(argv=None):
     sub.choices["stats"].add_argument("--boot_seed", type=int, default=0)
     args = ap.parse_args(argv)
 
-    root = Path(args.root) if args.root else rq2_root()
-    out_dir = Path(args.out) if args.out else root / "probes" / args.model
-    results = Path(args.results)
-    if not results.is_absolute():
-        results = repo_path(str(results))
+    paths = run_paths(args.model, args.bias, root=args.root)
+    out_dir, results = paths.probes, paths.results
     results.mkdir(parents=True, exist_ok=True)
-    ctx = load_context(args.model, root, out_dir)
+    ctx = load_context(paths)
     summary_path = results / "summary.csv"
     summary = pd.read_csv(summary_path) if summary_path.exists() else None
     positions = [p for p in args.positions.split(",") if p]
@@ -658,27 +656,24 @@ def main(argv=None):
     else:
         raise ValueError(f"no {summary_path}; pass --layers")
     print(
-        f"{args.model}: {len(ctx['y'])} rows, {len(np.unique(ctx['groups']))} targets, grid "
-        f"{list(ctx['grid'])}, {usable_cpus()} usable CPUs; WP5 outputs {out_dir}",
+        f"{args.model} / {args.bias}: {len(ctx['y'])} rows, "
+        f"{len(np.unique(ctx['groups']))} targets, grid {list(ctx['grid'])}, "
+        f"{usable_cpus()} usable CPUs; WP5 outputs {out_dir}",
         flush=True,
     )
 
+    settings = {"positions": positions, "layers": layers}
     if args.cmd == "null":
-        run_null(
-            ctx,
-            parse_seeds(args.seeds),
-            positions,
-            layers,
-            results / "null_scores.csv",
-            args.n_jobs,
-        )
+        seeds = parse_seeds(args.seeds)
+        run_null(ctx, seeds, positions, layers, results / "null_scores.csv", args.n_jobs)
+        record_run(paths, "controls null", settings | {"seeds": seeds})
         print(f"null scores: {results / 'null_scores.csv'}")
 
     elif args.cmd == "cgrid":
         grid = tuple(float(c) for c in args.grid.split(","))
         ctx_grid = ctx | {"grid": grid}
         tasks = [
-            {k: ctx_grid[k] for k in ("model", "root", "y", "groups", "folds", "flag", "grid")}
+            {k: ctx_grid[k] for k in ("paths", "y", "groups", "folds", "flag", "grid")}
             | {"position": p, "k": k}
             for p in positions
             for k in layers
@@ -698,6 +693,7 @@ def main(argv=None):
                 for r in df.itertuples()
             ]
         df.to_csv(results / "c_grid_low.csv", index=False)
+        record_run(paths, "controls cgrid", settings | {"grid": list(grid)})
         for r in df.itertuples():
             print(
                 f"  {r.position:11s} layer {r.layer}: acc {r.acc:.3f} (WP5 {r.acc_wp5:.3f})  pair "
@@ -727,7 +723,8 @@ def main(argv=None):
         ci.to_csv(results / "ci.csv", index=False)
         print(f"ci.csv: {len(ci)} rows, R = {args.n_boot} ({time.time() - t0:.0f}s)")
 
-        keep = drop_pairs(meta)
+        misspelled = bias_config(args.bias)["misspelled"]
+        keep = drop_pairs(meta, misspelled)
         dropped = meta.loc[~keep, ["word", "sentence"]]
         rob = robustness(meta, {k: v[:2] for k, v in preds.items()}, keep)
         rob.to_csv(results / "robustness_no_misspellings.csv", index=False)
@@ -749,6 +746,17 @@ def main(argv=None):
         report += peak_report(ci, rob, pv, null)
         text = "\n".join(report)
         (results / "gate2.txt").write_text(text + "\n", encoding="utf-8")
+        record_run(
+            paths,
+            "controls stats",
+            settings
+            | {
+                "n_boot": args.n_boot,
+                "boot_seed": args.boot_seed,
+                "null_seeds_B": None if pv is None else int(pv["B"].iloc[0]),
+                "misspelled": misspelled,
+            },
+        )
         print("\nGate 2\n" + text)
 
 

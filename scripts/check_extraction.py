@@ -20,15 +20,17 @@ A wrong activation file looks exactly like a right one, so before any probe is t
                               validate_meta passes, ``ell`` has no NaN and is <= 0. Prints the
                               mean row norm and the largest |value| per layer.
 
-Prints PASS / FAIL per check, writes ``{root}/acts/{model}/check_extraction.json`` and exits
-with status 1 if any check fails.
+Prints PASS / FAIL per check, writes ``{acts}/check_extraction.json`` (``{acts}`` =
+``{rq2_root}/{bias}/{model}/acts``), records the statuses as step "check_extraction" in
+``results/rq2/{bias}/{model}/run.json`` and exits with status 1 if any check fails.
 
 Usage:
     # login node (CPU checks 3-5, a few minutes: reads all layer files)
-    source slurm/env.sh && python scripts/check_extraction.py --model lapa-12b-instruct
+    source slurm/env.sh
+    python scripts/check_extraction.py --model lapa-12b-instruct --bias gender
     # GPU job (all five checks)
-    make submit PURPOSE="rq2: WP4 extraction checks" \\
-      CMD="python scripts/check_extraction.py --model lapa-12b-instruct --gpu" JOB_TIME=00:20:00
+    make submit PURPOSE="rq2: WP4 extraction checks" JOB_TIME=00:20:00 \\
+      CMD="python scripts/check_extraction.py --model lapa-12b-instruct --bias gender --gpu"
     # options: --root PATH (default rq2_root)  --tokenizer HUB_ID (if the model folder is not
     #          there, e.g. on a laptop)  --seed 0  --n_rows 20  --n_multi 5  --n_pairs 10
 """
@@ -42,7 +44,7 @@ import numpy as np
 import torch
 
 from probing.extract import _decode_span, _model_inputs, gather_positions, word_logprob
-from probing.io import POSITION_COLUMNS, POSITIONS, layer_path, load_layer, load_meta, rq2_root
+from probing.io import POSITION_COLUMNS, POSITIONS, load_layer, load_meta, record_run, run_paths
 from probing.io import validate_meta as _validate_meta
 from rmu.config import resolve_model
 
@@ -93,19 +95,19 @@ def expected_shape(model, info):
 # --------------------------------------------------------------------------- checks 4 + 5
 
 
-def check_files_and_positions(res, meta, model, root, n_states, hidden, store_dtype):
+def check_files_and_positions(res, meta, paths, n_states, hidden, store_dtype):
     """One pass over all layer files: check 5 (files) and check 4 (positions agree)."""
     n = len(meta)
     missing = [
-        str(layer_path(model, p, k, root))
+        str(paths.layer(p, k))
         for p in POSITIONS
         for k in range(n_states)
-        if not layer_path(model, p, k, root).exists()
+        if not paths.layer(p, k).exists()
     ]
     extra = [
         str(f)
         for p in POSITIONS
-        for f in sorted((Path(root) / "acts" / model / p).glob("layer_*.npy"))
+        for f in sorted((paths.acts / p).glob("layer_*.npy"))
         if int(f.stem.split("_")[1]) >= n_states
     ]
     problems = []
@@ -128,9 +130,9 @@ def check_files_and_positions(res, meta, model, root, n_states, hidden, store_dt
     for k in range(n_states):
         arrs = {}
         for p in POSITIONS:
-            if not layer_path(model, p, k, root).exists():
+            if not paths.layer(p, k).exists():
                 continue
-            raw = load_layer(model, p, k, root=root)
+            raw = load_layer(paths, p, k)
             dtypes.add(str(raw.dtype))
             if raw.shape != (n, hidden):
                 problems.append(f"{p} layer {k}: shape {raw.shape}, expected {(n, hidden)}")
@@ -208,7 +210,7 @@ def check_files_and_positions(res, meta, model, root, n_states, hidden, store_dt
 # --------------------------------------------------------------------------- check 3
 
 
-def check_layer0(res, meta, model, root, tokenizer):
+def check_layer0(res, meta, paths, tokenizer):
     problems, groups_info = [], {}
     ids = [tokenizer(s)["input_ids"] for s in meta["sentence"]]
     lens = np.array([len(x) for x in ids])
@@ -219,7 +221,7 @@ def check_layer0(res, meta, model, root, tokenizer):
     for p in POSITIONS:
         idx = meta[POSITION_COLUMNS[p]].to_numpy()
         tok = np.array([x[len(x) + i] for x, i in zip(ids, idx)])
-        a = np.asarray(load_layer(model, p, 0, root=root), dtype=np.float32)
+        a = np.asarray(load_layer(paths, p, 0), dtype=np.float32)
         uniq, first_row, inverse = np.unique(tok, return_index=True, return_inverse=True)
         unequal = [
             int(t) for g, t in enumerate(uniq) if not (a[inverse == g] == a[first_row[g]]).all()
@@ -272,11 +274,9 @@ def pick_rows(meta, n_rows, n_multi, seed):
 
 
 @torch.no_grad()
-def check_single(res, meta, model_name, root, model, tokenizer, rows, known, n_states):
+def check_single(res, meta, paths, model, tokenizer, rows, known, n_states):
     device = model.get_input_embeddings().weight.device
-    saved = {
-        p: [load_layer(model_name, p, k, root=root) for k in range(n_states)] for p in POSITIONS
-    }
+    saved = {p: [load_layer(paths, p, k) for k in range(n_states)] for p in POSITIONS}
     worst_cos, worst_rel, worst_ell, table, problems = 1.0, 0.0, 0.0, [], []
     for r in rows + known:
         row = meta.iloc[r]
@@ -481,6 +481,7 @@ def check_prefix(res, meta, model, tokenizer, n_pairs, seed, n_states, fp32=True
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True)
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
     ap.add_argument("--root", default=None, help="default: paths.rq2_root")
     ap.add_argument("--gpu", action="store_true", help="also run checks 1-2 (loads the model)")
     ap.add_argument("--tokenizer", default=None, help="tokenizer source if not the model's")
@@ -495,39 +496,53 @@ def main(argv=None):
 
     from rmu import utils
 
-    root = Path(args.root) if args.root else rq2_root()
-    meta = load_meta(args.model, root=root)
-    run_json = root / "acts" / args.model / "run.json"
+    paths = run_paths(args.model, args.bias, root=args.root)
+    meta = load_meta(paths)
+    run_json = paths.acts / "run.json"
     info = json.loads(run_json.read_text()) if run_json.exists() else {}
     n_states, hidden, source = expected_shape(args.model, info)
     print(
         f"{args.model}: {len(meta)} rows, expecting {n_states} hidden states x {hidden} "
-        f"(from {source}); files in {root}\n",
+        f"(from {source}); files in {paths.data}\n",
         flush=True,
     )
 
     res = Results()
-    check_files_and_positions(
-        res, meta, args.model, root, n_states, hidden, info.get("store_dtype")
-    )
+    check_files_and_positions(res, meta, paths, n_states, hidden, info.get("store_dtype"))
 
     if args.gpu:
         model, tokenizer = utils.load_model(args.model)
         model.eval()
     else:
         model, tokenizer = None, utils.load_tokenizer(args.tokenizer or args.model)
-    check_layer0(res, meta, args.model, root, tokenizer)
+    check_layer0(res, meta, paths, tokenizer)
 
     if args.gpu:
         rows, known = pick_rows(meta, args.n_rows, args.n_multi, args.seed)
-        check_single(res, meta, args.model, root, model, tokenizer, rows, known, n_states)
+        check_single(res, meta, paths, model, tokenizer, rows, known, n_states)
         check_prefix(
             res, meta, model, tokenizer, args.n_pairs, args.seed, n_states, not args.no_fp32
         )
 
-    out = root / "acts" / args.model / "check_extraction.json"
-    payload = {"model": args.model, "gpu": args.gpu, "seed": args.seed, "checks": res.checks}
+    out = paths.acts / "check_extraction.json"
+    payload = {
+        "model": args.model,
+        "bias": args.bias,
+        "gpu": args.gpu,
+        "seed": args.seed,
+        "checks": res.checks,
+    }
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    record_run(
+        paths,
+        "check_extraction",
+        {
+            "gpu": args.gpu,
+            "seed": args.seed,
+            "ok": res.ok,
+            "checks": {name: c["status"] for name, c in res.checks.items()},
+        },
+    )
     print("\n" + "\n".join(f"{c['status']}  {name}" for name, c in res.checks.items()))
     print(f"{'ALL PASS' if res.ok else 'FAILED'}; wrote {out}")
     sys.exit(0 if res.ok else 1)

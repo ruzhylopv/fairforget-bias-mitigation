@@ -3,31 +3,34 @@
 Question: is the stereotype label `S` linearly readable from a frozen model's activations at the
 attribute word, beyond what the word's own predictability explains? First run: Lapa-12B-Instruct,
 StereoSet intrasentence gender (dev + test), 1,025 pairs = 2,050 sentences (1,026 minus one
-misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probing/`.
+misspelled pair, see `config/rq2/gender.yaml`). Code: `src/probing/`. Every step takes
+`--model` and `--bias` (default `gender`) and finds its files through
+`probing.io.run_paths(model, bias)` (see [Files](#files)).
 
 ## The four steps
 
 1. **Metadata** (CPU): one row per sentence with its label and token positions, built from the
    tokenization check (`results/tokenization-check-nov17/pairs.csv`, nothing is re-tokenized):
-   `python -m probing.meta --model lapa-12b-instruct --bias_types gender`
+   `python -m probing.meta --model lapa-12b-instruct --bias gender`. Items left out are listed,
+   with a reason, under `exclude_items` in `config/rq2/{bias}.yaml`.
 2. **Extraction** (GPU): one frozen forward pass per sentence. Save `hidden_states[k]` at every
    layer and at each token position, and fill `ell` (the attribute word's log-prob) in the meta.
    `src/probing/extract.py`; a few minutes for 2,050 sentences:
    ```bash
    # dry run, first 64 rows, written to {runs_root}/<job>/rq2-dry (rq2_root is not touched)
-   make submit PURPOSE="rq2: extract dry run" \
-     CMD="python -m probing.extract --model lapa-12b-instruct --limit 64" JOB_TIME=00:20:00
+   make submit PURPOSE="rq2: extract dry run" JOB_TIME=00:20:00 \
+     CMD="python -m probing.extract --model lapa-12b-instruct --bias gender --limit 64"
    # full run
-   make submit PURPOSE="rq2: extract lapa gender" \
-     CMD="python -m probing.extract --model lapa-12b-instruct --bias_types gender" \
-     JOB_TIME=00:30:00
+   make submit PURPOSE="rq2: extract lapa gender" JOB_TIME=00:30:00 \
+     CMD="python -m probing.extract --model lapa-12b-instruct --bias gender"
    ```
    `ell = Σ_{p = first_diff..last_subtok} log softmax(z_{p-1})[x_p]` (summed, float32). For Lapa
    gender `first_diff` is always the word's first token, so this is the whole word's log-prob.
    Checks that run every time: `attention_mask.sum() == n_tokens` and BOS for every row, the
    number of hidden states, finite activations, `ell` finite and ≤ 0, the decoded tokens at the
    saved positions compared with `word`, and batched vs one-at-a-time activations (left
-   padding). Results and provenance go to `acts/{model}/run.json` (git commit read from `.git`,
+   padding). Results and provenance go to `acts/run.json` and to the committed `run.json` as
+   step `extract` (git commit read from `.git`,
    since compute nodes have no git; versions; job id; max |activation| per layer; mean `ell`
    by label; attribute-word SS = share of pairs with `ell_stereo > ell_anti`). Existing layer
    files are only replaced with `--overwrite`.
@@ -37,11 +40,11 @@ misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probi
    `src/probing/probe.py`:
    ```bash
    make submit PURPOSE="rq2: probes lapa gender" JOB_CPUS=72 JOB_TIME=01:00:00 \
-     CMD="python -m probing.probe --model lapa-12b-instruct --layers 0-48"
+     CMD="python -m probing.probe --model lapa-12b-instruct --bias gender --layers 0-48"
    ```
    - Pipeline `StandardScaler + LogisticRegression(max_iter=5000)`; the scaler matters because
      a few of lapa's dimensions reach ~1e5.
-   - Outer `GroupKFold(5)` by target, saved once as `probes/{model}/folds.csv` and reused by
+   - Outer `GroupKFold(5)` by target, saved once as `probes/folds.csv` and reused by
      the baseline and WP6. Inner `GridSearchCV` over C in {1e-4 … 1}, `GroupKFold(4)` on the
      training targets, selected by log-loss. The outer loop is explicit so the groups reach
      the inner split. Baseline: the same pipeline on `ell` alone, C = 1e4, no inner search.
@@ -55,28 +58,30 @@ misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probi
      mapped back to raw activations (`w_raw = w'/s`, `b_raw = b' − Σ w'μ/s`), so
      `X @ w_raw + b_raw` is the decision function on raw X. The scaled `coef_` is not a
      direction in activation space.
-   - Outputs: `probes/{model}/{position}/preds_layer_kk.csv` (row, fold, z, p, C),
-     `probe_layer_kk.npz`, `probes/{model}/baseline_ell.csv`, and the committed
-     `results/rq2-probing-<mmmdd>/summary.csv`.
+   - Outputs: `probes/{position}/preds_layer_kk.csv` (row, fold, z, p, C),
+     `probe_layer_kk.npz`, `probes/baseline_ell.csv`, `probes/run.json` (settings; WP6 reads
+     the grid from it), and the committed `summary.csv`.
    - To test on fake data: `scripts/make_fake_acts.py --layers 19-23 --signal 20,21,22
      --delta 2 --root R` then `python -m probing.probe --model lapa-12b-instruct --layers 19-23
-     --root R --summary R/summary.csv` gives ~0.92 per sentence on 20–22, ~0.50 elsewhere.
+     --root R` gives ~0.92 per sentence on 20–22, ~0.50 elsewhere. With `--root`, the
+     results go to `R/results/...`, not into the repo.
 4. **Comparison**: bootstrap CIs over targets, p-values from the null. "Signal beyond
    predictability" = the probe is significantly above both baselines and the null is at ≈50%.
    `src/probing/controls.py` (WP6, gate 2), CPU, on the WP5 folds and predictions:
    ```bash
    # null: labels swapped in a random half of the pairs, full nested CV per probe and seed
    make submit PURPOSE="rq2 wp6: null 5 seeds" JOB_CPUS=288 JOB_TIME=01:00:00 \
-     CMD="python -m probing.controls null --model lapa-12b-instruct --seeds 0-4"
+     CMD="python -m probing.controls null --model lapa-12b-instruct --bias gender --seeds 0-4"
    make submit PURPOSE="rq2 wp6: null 100 seeds" JOB_CPUS=288 JOB_TIME=12:00:00 \
-     CMD="python -m probing.controls null --model lapa-12b-instruct --seeds 0-99"
+     CMD="python -m probing.controls null --model lapa-12b-instruct --bias gender --seeds 0-99"
    # layers 0-7 with C down to 1e-6 (scores only; WP5 predictions untouched)
    make submit PURPOSE="rq2 wp6: C grid 0-7" JOB_CPUS=72 JOB_TIME=00:30:00 \
-     CMD="python -m probing.controls cgrid --model lapa-12b-instruct --layers 0-7"
+     CMD="python -m probing.controls cgrid --model lapa-12b-instruct --bias gender --layers 0-7"
    # p-values, bootstrap CIs, misspellings, gate 2 checklist (minutes)
    make submit PURPOSE="rq2 wp6: stats" JOB_CPUS=8 JOB_TIME=00:20:00 \
-     CMD="python -m probing.controls stats --model lapa-12b-instruct"
-   uv run python scripts/plot_controls.py --results results/rq2-probing-nov21   # laptop
+     CMD="python -m probing.controls stats --model lapa-12b-instruct --bias gender"
+   uv run python scripts/plot_controls.py --model lapa-12b-instruct --bias gender   # laptop
+   uv run python scripts/plot_probes.py --model lapa-12b-instruct --bias gender     # laptop
    ```
    - `null` appends one row per (seed, probe) to `null_scores.csv` as fits finish and skips
      rows already there, so rerunning the same command after a time limit resumes it. Seeds
@@ -87,8 +92,9 @@ misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probi
      draws for every probe and the baseline, so the gaps are paired: `gap*` = probe − `ell`
      (predictability), `gap_lex*` = probe − layer 0 of the same position (lexical baseline,
      NaN on the `ell` row). The fitted probes are treated as fixed (no refitting variance).
-   - `robustness_no_misspellings.csv`: the summary without the pairs whose word is
-     `mainicure`, `uncertanties` or `forebearance`, from the stored predictions (no refit).
+   - `robustness_no_misspellings.csv`: the summary without the pairs whose word is listed
+     under `misspelled` in `config/rq2/{bias}.yaml` (gender: `mainicure`, `uncertanties`,
+     `forebearance`), from the stored predictions (no refit).
    - `gate2.txt`: the checklist as far as it can be computed (null band, fold balance, folds
      shared by probe and baseline and reproducing `summary.csv`, C grid).
 
@@ -100,12 +106,31 @@ labels at ≈50%.
 
 ## Files
 
-Everything lives under `paths.rq2_root` (`config/default.yaml`, override in `config/local.yaml`):
+One run = one model on one StereoSet bias type, with one folder for the big files (under
+`paths.rq2_root`, `config/default.yaml`, override in `config/local.yaml`) and one committed folder
+for the small results. `probing.io.run_paths(model, bias)` returns all of them, and every step
+uses it, so a race run on lapa never touches the gender files:
 
 ```
-{rq2_root}/meta/{model}.csv                              metadata: y, groups, bookkeeping
-{rq2_root}/acts/{model}/{position}/layer_{kk:02d}.npy    activations: X, float16 (N, hidden)
+{rq2_root}/{bias}/{model}/meta.csv                            metadata: y, groups, bookkeeping
+{rq2_root}/{bias}/{model}/acts/{position}/layer_{kk:02d}.npy  activations: X, float16 (N, hidden)
+{rq2_root}/{bias}/{model}/acts/run.json                       extraction provenance + stats
+{rq2_root}/{bias}/{model}/probes/                             folds, predictions, probe weights
+results/rq2/{bias}/{model}/                                   summary.csv, WP6 tables, plots
+results/rq2/{bias}/{model}/run.json                           date, git commit, job id, settings
+                                                              of every step (meta, extract,
+                                                              probe, controls ...)
+config/rq2/{bias}.yaml                                        exclude_items (id: reason),
+                                                              misspelled (words)
 ```
+
+Dates and commits go into `run.json`, never into folder names; a rerun of a step replaces its
+entry. `--root R` (every step) replaces `rq2_root` and sends the results to `R/results/...`, so
+fake data and dry runs never overwrite committed results. Runs from before this layout were
+moved once with `scripts/migrate_rq2_layout.py --model M --bias B [--apply]` (prints the plan
+without `--apply`, refuses while project jobs are queued). For lapa/gender,
+`results/rq2/gender/lapa-12b-instruct/labels.csv` is the committed meta without `ell`; a test
+checks that `probing.meta` still rebuilds it exactly.
 
 - **Activations = X.** `kk` indexes `hidden_states` (`00` = embeddings, `00..48` for Lapa,
   hidden size 3840). Stored as float16; if any activation of a model exceeds the float16 range

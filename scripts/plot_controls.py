@@ -1,15 +1,15 @@
 """Plot of the WP6 controls: the real probe curve with its bootstrap CI, the null band and the
 ell baseline, per position; plus the gap probe - ell with its paired CI.
 
-Reads ``ci.csv`` and (if present) ``null_scores.csv`` from ``--results`` (written by
-``python -m probing.controls stats`` / ``null``) and writes ``controls_by_layer.png`` there.
+Reads ``ci.csv`` and (if present) ``null_scores.csv`` from the run's results folder
+(``results/rq2/{bias}/{model}``, written by ``python -m probing.controls stats`` / ``null``) and
+writes ``controls_by_layer.png`` there.
 
 Usage:
-    uv run python scripts/plot_controls.py --results results/rq2-probing-nov21
+    uv run python scripts/plot_controls.py --model lapa-12b-instruct --bias gender
 """
 
 import argparse
-from pathlib import Path
 
 import matplotlib
 
@@ -17,6 +17,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 from plot_probes import GRID, INK_2, LABELS, MUTED, SERIES, layer_axis  # noqa: E402
+
+from probing.io import run_paths  # noqa: E402
 
 NULL_FILL = "#d9d8d3"
 TITLES = {
@@ -62,11 +64,12 @@ def gap_panel(ax, ci, pos, metric="acc_pair"):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--results", required=True)
-    ap.add_argument("--model", default="lapa-12b-instruct", help="for the title")
+    ap.add_argument("--model", default="lapa-12b-instruct")
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
+    ap.add_argument("--root", default=None, help="data root, as given to probing.controls")
     args = ap.parse_args()
 
-    results = Path(args.results)
+    results = run_paths(args.model, args.bias, root=args.root).results
     ci = pd.read_csv(results / "ci.csv")
     null_path = results / "null_scores.csv"
     null = pd.read_csv(null_path) if null_path.exists() else None
@@ -115,7 +118,9 @@ def main():
         fontsize=9,
         labelcolor=INK_2,
     )
-    fig.text(0.99, 0.995, args.model, ha="right", va="top", fontsize=9, color=INK_2)
+    fig.text(
+        0.99, 0.995, f"{args.model}, {args.bias}", ha="right", va="top", fontsize=9, color=INK_2
+    )
     for ax in axes.ravel():
         ax.grid(True, axis="y", color=GRID)
     fig.get_layout_engine().set(rect=(0, 0, 1, 0.94))

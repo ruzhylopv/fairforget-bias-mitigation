@@ -1,23 +1,25 @@
 """RQ2 extraction: one frozen forward pass per sentence of the meta table (GPU).
 
-For every row of ``{rq2_root}/meta/{model}.csv`` this saves ``hidden_states[k]`` at the
-attribute word (positions ``first_diff`` and ``last_subtok``) for every k, and fills ``ell``,
-the attribute word's log-probability under the model:
+For every row of the meta table (``run_paths(model, bias).meta``) this saves
+``hidden_states[k]`` at the attribute word (positions ``first_diff`` and ``last_subtok``) for
+every k, and fills ``ell``, the attribute word's log-probability under the model:
 
     ell = sum_{p = first_diff .. last_subtok} log softmax(z_{p-1})[x_p]
 
 The model is only read, never trained. Outputs (see docs/rq2_probing.md)::
 
-    {root}/acts/{model}/{position}/layer_{kk:02d}.npy   (N, hidden), float16 (float32 on overflow)
-    {root}/meta/{model}.csv                              same table, ``ell`` filled
-    {root}/acts/{model}/run.json                         provenance + summary stats
+    {rq2_root}/{bias}/{model}/acts/{position}/layer_{kk:02d}.npy  (N, hidden), float16 (float32
+                                                                  on overflow)
+    {rq2_root}/{bias}/{model}/meta.csv                            same table, ``ell`` filled
+    {rq2_root}/{bias}/{model}/acts/run.json                       provenance + summary stats
+    results/rq2/{bias}/{model}/run.json                           the same, as step "extract"
 
 Usage:
     make submit PURPOSE="rq2: extract lapa gender" \\
-      CMD="python -m probing.extract --model lapa-12b-instruct --bias_types gender" \\
+      CMD="python -m probing.extract --model lapa-12b-instruct --bias gender" \\
       JOB_TIME=00:30:00
     # dry run on the first 64 rows, written to {run_dir}/rq2-dry instead of rq2_root:
-    python -m probing.extract --model lapa-12b-instruct --limit 64
+    python -m probing.extract --model lapa-12b-instruct --bias gender --limit 64
 """
 
 import argparse
@@ -25,9 +27,7 @@ import datetime
 import json
 import os
 import platform
-import subprocess
 import time
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -36,13 +36,14 @@ import torch
 from probing.io import (
     POSITION_COLUMNS,
     POSITIONS,
-    layer_path,
+    git_commit,
     load_meta,
-    rq2_root,
+    record_run,
+    run_paths,
     save_layer,
     save_meta,
 )
-from rmu.config import PROJECT_ROOT, resolve_model, run_dir
+from rmu.config import resolve_model, run_dir
 
 FLOAT16_MAX = float(np.finfo(np.float16).max)  # 65504
 
@@ -261,54 +262,20 @@ def choose_store_dtype(requested: str, max_abs) -> str:
     return requested
 
 
-def git_commit(repo: Path = PROJECT_ROOT):
-    """HEAD commit; read from .git directly when git is missing (compute nodes)."""
-    try:
-        return subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        pass
-    try:
-        git = repo / ".git"
-        if git.is_file():  # worktree: "gitdir: <path>"
-            git = Path(git.read_text().split(":", 1)[1].strip())
-        head = (git / "HEAD").read_text().strip()
-        if not head.startswith("ref:"):
-            return head
-        ref = head.split(":", 1)[1].strip()
-        common = git / "commondir"
-        roots = [git] + ([git / common.read_text().strip()] if common.exists() else [])
-        for root in roots:
-            if (root / ref).exists():
-                return (root / ref).read_text().strip()
-            packed = root / "packed-refs"
-            if packed.exists():
-                for line in packed.read_text().splitlines():
-                    if line.endswith(" " + ref):
-                        return line.split()[0]
-    except OSError:
-        pass
-    return None
-
-
 # --------------------------------------------------------------------------- CLI
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True, help="short name (config/default.yaml) or path")
-    ap.add_argument("--bias_types", nargs="+", default=["gender"], help="must match the meta")
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
     ap.add_argument("--batch_size", type=int, default=32)
     ap.add_argument("--limit", type=int, default=None, help="first N rows only (dry run)")
     ap.add_argument("--root", default=None, help="where the meta is read (default: rq2_root)")
     ap.add_argument(
         "--out_root",
         default=None,
-        help="where outputs go (default: --root; with --limit: {run_dir}/rq2-dry)",
+        help="root the outputs go to (default: --root; with --limit: {run_dir}/rq2-dry)",
     )
     ap.add_argument("--store_dtype", choices=["auto", "float16", "float32"], default="auto")
     ap.add_argument("--overwrite", action="store_true", help="replace existing layer files")
@@ -317,30 +284,22 @@ def main(argv=None):
     from rmu.utils import load_model  # heavy import; keeps the pure functions light
 
     t0 = time.time()
-    in_root = Path(args.root) if args.root else rq2_root()
+    src = run_paths(args.model, args.bias, root=args.root)
     if args.out_root:
-        out_root = Path(args.out_root)
+        out = run_paths(args.model, args.bias, root=args.out_root)
     elif args.limit:
-        out_root = run_dir() / "rq2-dry"
+        out = run_paths(args.model, args.bias, root=run_dir() / "rq2-dry")
     else:
-        out_root = in_root
+        out = src
 
-    meta = load_meta(args.model, root=in_root)
-    bias_types = {b for arg in args.bias_types for b in arg.split(",") if b}
-    if set(meta["bias_type"]) != bias_types:
-        raise ValueError(
-            f"meta has bias types {sorted(set(meta['bias_type']))}, asked for "
-            f"{sorted(bias_types)}; rebuild it with python -m probing.meta"
-        )
+    meta = load_meta(src)  # checks that its model and bias_type columns match
     if args.limit:
         if args.limit % 2:
             raise ValueError("--limit must be even (rows come in pairs)")
         meta = meta.iloc[: args.limit].copy()
-    if not args.overwrite and layer_path(args.model, POSITIONS[0], 0, out_root).exists():
-        raise FileExistsError(
-            f"activations already exist under {out_root}/acts/{args.model}; pass --overwrite"
-        )
-    print(f"{len(meta)} sentences from {in_root}, writing to {out_root}", flush=True)
+    if not args.overwrite and out.layer(POSITIONS[0], 0).exists():
+        raise FileExistsError(f"activations already exist under {out.acts}; pass --overwrite")
+    print(f"{len(meta)} sentences from {src.meta}, writing to {out.data}", flush=True)
 
     model, tokenizer = load_model(args.model)
     print(f"loaded {args.model} ({model.dtype}) in {time.time() - t0:.0f}s", flush=True)
@@ -355,9 +314,9 @@ def main(argv=None):
 
     for p in POSITIONS:
         for k, a in enumerate(acts[p]):
-            save_layer(a, args.model, p, k, root=out_root, dtype=store_dtype)
+            save_layer(a, out, p, k, dtype=store_dtype)
     meta["ell"] = ell
-    save_meta(meta, args.model, root=out_root)
+    save_meta(meta, out)
 
     import transformers
 
@@ -369,10 +328,10 @@ def main(argv=None):
         "n_rows": len(meta),
         "n_hidden_states": len(acts[POSITIONS[0]]),
         "hidden_size": int(acts[POSITIONS[0]][0].shape[1]),
-        "bias_types": sorted(bias_types),
+        "bias": args.bias,
         "batch_size": args.batch_size,
         "limit": args.limit,
-        "meta_source": str(in_root),
+        "meta_source": str(src.meta),
         "git_commit": git_commit(),
         "torch": torch.__version__,
         "transformers": transformers.__version__,
@@ -388,11 +347,15 @@ def main(argv=None):
         "examples": checks["examples"],
         **stats,
     }
-    run_json = out_root / "acts" / args.model / "run.json"
+    run_json = out.acts / "run.json"
     run_json.write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    record_run(out, "extract", info, stamp=False)  # info has its own date, commit and job id
 
     print(report(meta, info))
-    print(f"Wrote {len(POSITIONS) * info['n_hidden_states']} layer files, meta and {run_json}")
+    print(
+        f"Wrote {len(POSITIONS) * info['n_hidden_states']} layer files, meta, {run_json} and "
+        f"{out.run_json}"
+    )
 
 
 def report(meta, info) -> str:

@@ -13,17 +13,22 @@ Scores come from the stored held-out predictions: per-sentence accuracy (z > 0),
 accuracy (rows 2i, 2i+1: correct if z[2i] > z[2i+1], ties count 1/2) and log-loss, overall and
 split by ``target_after_word`` at pair level (true on either row).
 
-Outputs::
+Outputs (``probing.io.run_paths(model, bias)``)::
 
-    {root}/probes/{model}/folds.csv                         row, fold, target
-    {root}/probes/{model}/baseline_ell.csv                  row, fold, z, p, C
-    {root}/probes/{model}/{position}/preds_layer_kk.csv     row, fold, z, p, C
-    {root}/probes/{model}/{position}/probe_layer_kk.npz     w_raw, b_raw, mu, scale, C
-    results/rq2-probing-<mmmdd>/summary.csv                 one row per position x layer + baseline
+    {probes}/folds.csv                        row, fold, target
+    {probes}/baseline_ell.csv                 row, fold, z, p, C
+    {probes}/{position}/preds_layer_kk.csv    row, fold, z, p, C
+    {probes}/{position}/probe_layer_kk.npz    w_raw, b_raw, mu, scale, C
+    {probes}/run.json                         settings (the grid is reused by probing.controls)
+    {results}/summary.csv                     one row per position x layer + baseline
+    {results}/run.json                        the same settings, as step "probe"
+
+with ``{probes}`` = ``{rq2_root}/{bias}/{model}/probes`` and ``{results}`` =
+``results/rq2/{bias}/{model}`` (in the repo, committed).
 
 Usage:
-    python -m probing.probe --model lapa-12b-instruct --positions first_diff,last_subtok \\
-        --layers 0-48 [--root PATH] [--n_jobs -1]
+    python -m probing.probe --model lapa-12b-instruct --bias gender \\
+        --positions first_diff,last_subtok --layers 0-48 [--root PATH] [--n_jobs -1]
 """
 
 import argparse
@@ -44,8 +49,7 @@ from sklearn.model_selection import GridSearchCV, GroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from probing.io import POSITIONS, load_layer, load_meta, rq2_root
-from rmu.config import repo_path
+from probing.io import POSITIONS, git_commit, load_layer, load_meta, record_run, run_paths
 
 GRID = (1e-4, 1e-3, 1e-2, 1e-1, 1.0)
 BASELINE_C = 1e4
@@ -200,12 +204,12 @@ def most_frequent(values):
 # --------------------------------------------------------------------------- one layer
 
 
-def run_layer(model, position, k, root, out_dir, meta_cols, folds, grid):
-    """Fit, score and save one (position, layer). Runs in a joblib worker (one BLAS thread,
-    set through the environment in ``main``)."""
+def run_layer(paths, position, k, meta_cols, folds, grid):
+    """Fit, score and save one (position, layer) of the run ``paths``. Runs in a joblib worker
+    (one BLAS thread, set through the environment in ``main``)."""
     t0 = time.time()
     y, groups, flag = meta_cols["S"], meta_cols["target"], meta_cols["flag"]
-    X = np.asarray(load_layer(model, position, k, root=root), dtype=np.float64)
+    X = np.asarray(load_layer(paths, position, k), dtype=np.float64)
     if X.shape[0] != len(y):
         raise ValueError(f"{position} layer {k}: {X.shape[0]} rows, meta has {len(y)}")
     res = fit_layer(X, y, groups, folds, grid)
@@ -216,7 +220,7 @@ def run_layer(model, position, k, root, out_dir, meta_cols, folds, grid):
     w_raw, b_raw = unscale(full)
     scaler = full.named_steps["standardscaler"]
 
-    folder = out_dir / position
+    folder = paths.probes / position
     folder.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         {
@@ -292,14 +296,13 @@ def save_folds(meta, folds, out_dir) -> Path:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True)
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
     ap.add_argument("--positions", default=",".join(POSITIONS))
     ap.add_argument("--layers", default="0-48")
-    ap.add_argument("--root", default=None, help="data root (default: paths.rq2_root)")
-    ap.add_argument("--out", default=None, help="default: {root}/probes/{model}")
     ap.add_argument(
-        "--summary",
+        "--root",
         default=None,
-        help="default: results/rq2-probing-<mmmdd>/summary.csv in the repo (today's date)",
+        help="data root (default: paths.rq2_root); results then go to {root}/results",
     )
     ap.add_argument("--grid", default=",".join(f"{c:g}" for c in GRID))
     ap.add_argument("--n_jobs", type=int, default=-1, help="parallel (position, layer) fits")
@@ -308,14 +311,8 @@ def main(argv=None):
     from joblib import Parallel, delayed, parallel_config
 
     t0 = time.time()
-    root = Path(args.root) if args.root else rq2_root()
-    out_dir = Path(args.out) if args.out else root / "probes" / args.model
-    today = datetime.date.today()
-    summary_path = (
-        Path(args.summary)
-        if args.summary
-        else repo_path(f"results/rq2-probing-{today:%b%d}".lower() + "/summary.csv")
-    )
+    paths = run_paths(args.model, args.bias, root=args.root)
+    out_dir, summary_path = paths.probes, paths.summary
     grid = tuple(float(c) for c in args.grid.split(","))
     positions = [p for p in args.positions.split(",") if p]
     unknown = set(positions) - set(POSITIONS)
@@ -323,7 +320,7 @@ def main(argv=None):
         raise ValueError(f"unknown positions {sorted(unknown)}; expected {POSITIONS}")
     layers = parse_layers(args.layers)
 
-    meta = load_meta(args.model, root=root)
+    meta = load_meta(paths)
     y = meta["S"].to_numpy()
     folds = outer_folds(meta)
     save_folds(meta, folds, out_dir)
@@ -365,7 +362,7 @@ def main(argv=None):
         os.environ[var] = "1"
     with parallel_config(backend="loky", inner_max_num_threads=1):
         rows = Parallel(n_jobs=n_jobs, verbose=0)(
-            delayed(run_layer)(args.model, p, k, root, out_dir, cols, folds, grid) for p, k in tasks
+            delayed(run_layer)(paths, p, k, cols, folds, grid) for p, k in tasks
         )
 
     summary = pd.DataFrame([base_row, *rows])
@@ -375,6 +372,7 @@ def main(argv=None):
     low = summary[summary["C_edge"].str.contains("low", na=False)]
     info = {
         "model": args.model,
+        "bias": args.bias,
         "n_rows": len(meta),
         "positions": positions,
         "layers": layers,
@@ -384,10 +382,12 @@ def main(argv=None):
         "n_jobs": n_jobs,
         "seconds_total": round(time.time() - t0, 1),
         "date": datetime.datetime.now().isoformat(timespec="seconds"),
+        "git_commit": git_commit(),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         "summary": str(summary_path),
     }
     (out_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    record_run(paths, "probe", info, stamp=False)
 
     print(f"\ndone in {info['seconds_total']:.0f}s with {n_jobs} workers")
     if len(high):

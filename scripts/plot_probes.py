@@ -1,13 +1,14 @@
 """Basic plots of a probing.probe summary: accuracy by layer next to the ell baseline.
 
-Writes three PNGs next to the summary (or to --out):
+Reads ``summary.csv`` from the run's results folder (``results/rq2/{bias}/{model}``) and writes
+three PNGs there (or to --out):
 
     accuracy_by_layer.png    per-sentence accuracy, pairwise accuracy, log-loss by layer
     accuracy_by_subset.png   the same two accuracies, target before vs after the word
     chosen_C.png             C chosen in the 5 outer folds, per layer and position
 
 Usage:
-    uv run python scripts/plot_probes.py --summary results/rq2-probing-nov21/summary.csv
+    uv run python scripts/plot_probes.py --model lapa-12b-instruct --bias gender
 """
 
 import argparse
@@ -19,6 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+
+from probing.io import run_paths  # noqa: E402
 
 # Reference palette (dataviz skill, light mode): categorical slots 1-2, validated.
 SERIES = {"first_diff": "#2a78d6", "last_subtok": "#eb6834"}
@@ -189,19 +192,22 @@ def plot_C(probes, grid_hint, out):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--summary", required=True)
+    ap.add_argument("--model", default="lapa-12b-instruct")
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
+    ap.add_argument("--root", default=None, help="data root, as given to probing.probe")
     ap.add_argument("--out", default=None, help="folder for the PNGs (default: next to summary)")
-    ap.add_argument("--model", default="lapa-12b-instruct", help="for the title")
     args = ap.parse_args()
 
-    summary = pd.read_csv(args.summary)
+    paths = run_paths(args.model, args.bias, root=args.root)
+    summary = pd.read_csv(paths.summary)
     base = summary[summary["position"] == "baseline_ell"].iloc[0]
     probes = summary[summary["position"] != "baseline_ell"].copy()
-    out = Path(args.out) if args.out else Path(args.summary).parent
+    out = Path(args.out) if args.out else paths.results
     out.mkdir(parents=True, exist_ok=True)
 
-    plot_overall(probes, base, args.model, out / "accuracy_by_layer.png")
-    plot_subsets(probes, base, args.model, out / "accuracy_by_subset.png")
+    title = f"{args.model}, {args.bias}"
+    plot_overall(probes, base, title, out / "accuracy_by_layer.png")
+    plot_subsets(probes, base, title, out / "accuracy_by_subset.png")
     plot_C(probes, (1e-4, 1e-3, 1e-2, 1e-1, 1.0), out / "chosen_C.png")
     print(f"wrote accuracy_by_layer.png, accuracy_by_subset.png, chosen_C.png to {out}")
 

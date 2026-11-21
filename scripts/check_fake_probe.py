@@ -11,7 +11,8 @@ This is a check of the data layout and CV wiring, not the RQ2 probe: C is fixed 
 Usage:
     uv run python scripts/make_fake_acts.py --root /tmp/rq2-fake --layers 19-23 --signal 20,21,22
     uv run python scripts/check_fake_probe.py --root /tmp/rq2-fake
-    # options: --model lapa-12b-instruct  --layers 19,21,23 (default: every layer file found)
+    # options: --model lapa-12b-instruct  --bias gender
+    #          --layers 19,21,23 (default: every layer file found)
     #          --positions first_diff,last_subtok  --n_splits 5  --seed 0
 """
 
@@ -25,7 +26,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from probing.controls import flip_within_pairs
-from probing.io import POSITIONS, layer_path, load_layer, load_meta
+from probing.io import POSITIONS, load_layer, load_meta, run_paths
 
 
 def probe_accuracy(X, y, groups, n_splits=5):
@@ -35,8 +36,8 @@ def probe_accuracy(X, y, groups, n_splits=5):
     return cross_val_score(clf, X, y, groups=groups, cv=cv).mean()
 
 
-def layers_on_disk(model, position, root):
-    folder = layer_path(model, position, 0, root).parent
+def layers_on_disk(paths, position):
+    folder = paths.acts / position
     found = (re.fullmatch(r"layer_(\d+)\.npy", p.name) for p in folder.glob("layer_*.npy"))
     return sorted(int(m.group(1)) for m in found if m)
 
@@ -45,13 +46,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--root", default=None, help="default: paths.rq2_root")
     ap.add_argument("--model", default="lapa-12b-instruct")
+    ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
     ap.add_argument("--layers", default=None, help="comma-separated (default: all found)")
     ap.add_argument("--positions", default=",".join(POSITIONS), help="comma-separated")
     ap.add_argument("--n_splits", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0, help="seed of the within-pair flips")
     args = ap.parse_args()
 
-    meta = load_meta(args.model, args.root)
+    paths = run_paths(args.model, args.bias, root=args.root)
+    meta = load_meta(paths)
     y = meta["S"].to_numpy()
     y_null = flip_within_pairs(y, args.seed)
     groups = meta["target"].to_numpy()
@@ -62,11 +65,11 @@ def main():
         if args.layers:
             layers = [int(k) for k in args.layers.split(",") if k]
         else:
-            layers = layers_on_disk(args.model, position, args.root)
+            layers = layers_on_disk(paths, position)
         if not layers:
             print(f"{position:<12} (no layer files)")
         for k in layers:
-            X = np.asarray(load_layer(args.model, position, k, root=args.root), dtype=np.float32)
+            X = np.asarray(load_layer(paths, position, k), dtype=np.float32)
             if X.shape[0] != len(meta):
                 raise ValueError(f"{position} layer {k}: {X.shape[0]} rows, meta has {len(meta)}")
             acc = probe_accuracy(X, y, groups, args.n_splits)

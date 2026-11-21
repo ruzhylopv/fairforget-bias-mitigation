@@ -6,7 +6,8 @@ import pytest
 from test_probing_probe import planted, tiny_meta
 
 from probing import controls, probe
-from probing.io import save_layer
+from probing import io as pio
+from probing.io import run_paths, save_layer
 
 
 def test_flip_keeps_labels_balanced_and_paired():
@@ -90,7 +91,8 @@ def test_target_draws_counts_sum_to_number_of_targets():
 
 def test_drop_pairs_drops_both_rows_of_a_pair():
     meta = pd.DataFrame({"word": ["car", "mainicure", "nice", "mean", "Forebearance.", "x"]})
-    assert controls.drop_pairs(meta).tolist() == [False, False, True, True, False, False]
+    words = pio.bias_config("gender")["misspelled"]
+    assert controls.drop_pairs(meta, words).tolist() == [False, False, True, True, False, False]
 
 
 def test_pvalues_counts_shuffles_at_least_as_good():
@@ -119,12 +121,12 @@ def test_pvalues_counts_shuffles_at_least_as_good():
 def test_run_null_is_at_chance_and_resumes(tmp_path):
     meta = tiny_meta()
     X = planted(meta, delta=3.0)  # strong real signal: the null must still sit near 0.5
+    paths = run_paths("m", "gender", root=tmp_path)
     for k in (0, 1):
-        save_layer(X, "m", "first_diff", k, root=tmp_path, dtype="float32")
+        save_layer(X, paths, "first_diff", k, dtype="float32")
     folds = probe.outer_folds(meta)
     ctx = {
-        "model": "m",
-        "root": tmp_path,
+        "paths": paths,
         "y": meta["S"].to_numpy(),
         "groups": meta["target"].to_numpy(),
         "flag": probe.pair_flag(meta),
@@ -141,7 +143,7 @@ def test_run_null_is_at_chance_and_resumes(tmp_path):
     probes = null[null["position"] == "first_diff"]
     assert probes["acc"].between(0.3, 0.7).all() and probes["acc_pair"].between(0.25, 0.75).all()
     real = controls.fit_task(
-        "m", "first_diff", 0, tmp_path, ctx["y"], ctx["groups"], folds, ctx["flag"], ctx["grid"]
+        paths, "first_diff", 0, ctx["y"], ctx["groups"], folds, ctx["flag"], ctx["grid"]
     )
     assert real["acc_pair"] > 0.9
 
