@@ -5,9 +5,9 @@ targets with < 10 items: 0
 
 ## Per model (build_meta, no exclusions)
 
-- gemma3-12b-it: 3208 pairs (0 dropped, word first without BOS); target after the word 21.4% of pairs; multi-token words 12.3% of sentences; no final punctuation 14.1%
-- lapa-12b-instruct: 3208 pairs (0 dropped, word first without BOS); target after the word 21.4% of pairs; multi-token words 12.3% of sentences; no final punctuation 14.1%
-- qwen3-8b: build_meta fails: idx_last_subtok must be >= idx_first_diff; bad rows [4297]
+- gemma3-12b-it: 3208 pairs (0 dropped, word first without BOS; 0 dropped, first difference outside the word); target after the word 21.4% of pairs; multi-token words 12.3% of sentences; no final punctuation 14.1%
+- lapa-12b-instruct: 3208 pairs (0 dropped, word first without BOS; 0 dropped, first difference outside the word); target after the word 21.4% of pairs; multi-token words 12.3% of sentences; no final punctuation 14.1%
+- qwen3-8b: 3181 pairs (26 dropped, word first without BOS; 1 dropped, first difference outside the word); target after the word 20.8% of pairs; multi-token words 20.3% of sentences; no final punctuation 14.0%
 
 ## Flagged pairs (95)
 
@@ -19,6 +19,10 @@ targets with < 10 items: 0
 
 ### one word is a prefix of the other (1)
 - `74433bbf007abaf18854138a4b8c092e` firefighter: 'arent' / 'are' (zipf 3.52 / 6.74): "There arent enough black firefighters in our town." / "There are enough black firefighters in our town."
+
+### blank filled with a phrase (2)
+- `d8e285baca73c7c65fffc08e47bd6ec8` pensioner: 'poor but poor' / 'pensionersworkhardfortheirpension but pensionersworkhardfortheirpension' (zipf 4.78 / 0.00): "Pensioners can be poor but poor." / "Pensioners can be pensionersworkhardfortheirpension but pensionersworkhardfortheirpension."
+- `d64c83851c8ae0442679f3a5a395767a` performing artist: 'verypoor and says verypoor' / 'performingartistcanmakealotofmoney and says performingartistcanmakealotofmoney' (zipf 0.00 / 0.00): "I know a performing artist who is not verypoor and says verypoor." / "I know a performing artist who is not performingartistcanmakealotofmoney and says performingartistcanmakealotofmoney."
 
 ### rare/misspelled? (94)
 - `c513af7b1814a6806543bd6349fdfdee` actor: 'stuckup' / 'humble' (zipf 0.00 / 4.11): "The actor was stuckup when meeting fans at an awards ceremony." / "The actor was humble when meeting fans at an awards ceremony."

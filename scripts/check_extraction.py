@@ -118,13 +118,17 @@ def check_files_and_positions(res, meta, paths, n_states, hidden, store_dtype):
     if extra:
         problems.append(f"unexpected files beyond layer {n_states - 1}: {extra[:3]}")
 
+    # Rows whose two saved positions are the same token must be identical, the others must
+    # differ. Single-token words always have one position; a multi-token word can too, when
+    # its first differing token is its last subtoken (qwen3 "ir|aq" / "ir|an": mid-word).
     same_idx = (meta["idx_first_diff"] == meta["idx_last_subtok"]).to_numpy()
     single = (meta["n_word_tokens"] == 1).to_numpy()
+    mid_word = int((same_idx & ~single).sum())
     pos_problems = []
-    if not np.array_equal(same_idx, single):
+    if (single & ~same_idx).any():
         pos_problems.append(
-            f"idx_first_diff == idx_last_subtok disagrees with n_word_tokens == 1 at rows "
-            f"{_rows(np.flatnonzero(same_idx != single))}"
+            f"single-token words with idx_first_diff != idx_last_subtok at rows "
+            f"{_rows(np.flatnonzero(single & ~same_idx))}"
         )
 
     dtypes, norms, maxabs = set(), {p: [] for p in POSITIONS}, {p: [] for p in POSITIONS}
@@ -153,12 +157,12 @@ def check_files_and_positions(res, meta, paths, n_states, hidden, store_dtype):
 
         if len(arrs) == 2:  # check 4 at this layer
             equal = (arrs["first_diff"] == arrs["last_subtok"]).all(axis=1)
-            bad_single = np.flatnonzero(single & ~equal)
-            bad_multi = np.flatnonzero(~single & equal)
-            if len(bad_single):
-                pos_problems.append(f"layer {k}: single-token rows differ {_rows(bad_single)}")
-            if len(bad_multi):
-                pos_problems.append(f"layer {k}: multi-token rows identical {_rows(bad_multi)}")
+            bad_same = np.flatnonzero(same_idx & ~equal)
+            bad_diff = np.flatnonzero(~same_idx & equal)
+            if len(bad_same):
+                pos_problems.append(f"layer {k}: one-position rows differ {_rows(bad_same)}")
+            if len(bad_diff):
+                pos_problems.append(f"layer {k}: two-position rows identical {_rows(bad_diff)}")
 
     if len(dtypes) > 1 or not dtypes <= {"float16", "float32"}:
         problems.append(f"dtypes {sorted(dtypes)}; expected one of float16/float32")
@@ -201,8 +205,9 @@ def check_files_and_positions(res, meta, paths, n_states, hidden, store_dtype):
     res.add(
         "4 positions agree",
         not pos_problems,
-        f"{int(single.sum())} single-token rows identical and {int((~single).sum())} "
-        f"multi-token rows different at all {n_states} layers"
+        f"{int(same_idx.sum())} one-position rows identical ({mid_word} multi-token, first "
+        f"difference mid-word) and {int((~same_idx).sum())} two-position rows different at "
+        f"all {n_states} layers"
         if not pos_problems
         else "; ".join(pos_problems[:5]),
         problems=pos_problems,

@@ -8,7 +8,9 @@ Run before a bias type's first GPU run; the findings go into ``config/rq2/{bias}
   (check by hand: misspelling, or just a rare word?);
 * broken pairs, found automatically: the same word on both sides, the word not in its
   sentence, sentences that differ outside the attribute word, a word that is a prefix of the
-  other ("are" / "arent": the first differing token lies after the shorter word);
+  other ("are" / "arent": the first differing token lies after the shorter word), a blank
+  filled with a phrase ("doctor as a doctor": first and last subtoken can be the same token);
+* per model, pairs build_meta drops (no BOS; first difference outside the word);
 * shares: target after the word, multi-token words (per model), no final punctuation;
 * items per target (smallest, median): few items per target make the grouped CV noisy.
 
@@ -70,6 +72,8 @@ def pair_flags(pairs: pd.DataFrame) -> pd.DataFrame:
             norm(ws).startswith(norm(wa)) or norm(wa).startswith(norm(ws))
         ):
             flags.append("one word is a prefix of the other")
+        if " " in ws.strip() or " " in wa.strip():
+            flags.append("blank filled with a phrase")
         zs, za = zipf(ws), zipf(wa)
         if zs == 0:
             flags.append(f"rare/misspelled? {norm(ws)!r} (stereo)")
@@ -108,6 +112,7 @@ def model_shares(bias: str, models) -> list:
                 "model": m,
                 "pairs": n,
                 "dropped_no_context": len(meta.attrs.get("dropped_no_context", [])),
+                "dropped_outside": len(meta.attrs.get("dropped_diff_outside_word", [])),
                 "target_after_word": meta.groupby("item_id")["target_after_word"].any().mean(),
                 "multi_token_word": (meta["n_word_tokens"] > 1).mean(),
                 "no_final_punct": (~meta["ends_with_punct"]).mean(),
@@ -161,7 +166,8 @@ def main(argv=None):
         else:
             lines.append(
                 f"- {s['model']}: {s['pairs']} pairs ({s['dropped_no_context']} dropped, word "
-                f"first without BOS); target after the word {100 * s['target_after_word']:.1f}% "
+                f"first without BOS; {s['dropped_outside']} dropped, first difference outside "
+                f"the word); target after the word {100 * s['target_after_word']:.1f}% "
                 f"of pairs; multi-token words {100 * s['multi_token_word']:.1f}% of sentences; "
                 f"no final punctuation {100 * s['no_final_punct']:.1f}%"
             )
@@ -172,6 +178,7 @@ def main(argv=None):
         "attribute word not in its sentence",
         "sentences differ outside the attribute word",
         "one word is a prefix of the other",
+        "blank filled with a phrase",
         "rare/misspelled?",
     ):
         f = flagged[flagged["flags"].str.contains(re.escape(kind))]

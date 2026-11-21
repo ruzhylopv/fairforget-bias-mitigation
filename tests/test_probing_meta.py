@@ -164,3 +164,20 @@ def test_pairs_without_context_are_dropped_for_tokenizers_without_bos(pairs, tmp
         == []
     )
     assert "no BOS: 1" in meta.describe(df)
+
+
+def test_pairs_whose_first_difference_lies_outside_the_word_are_dropped(pairs, tmp_path):
+    """qwen3 "Romanians live in rome": the space before "rome" sits in the previous token."""
+    five, _ = pairs
+    odd = five.copy()
+    gone = odd["item_id"][1]
+    odd.loc[1, "first_diff_class_anti"] = "before_word"
+    keep = odd["item_id"][2]
+    odd.loc[2, "first_diff_class_stereo"] = "mid_word"  # inside the word: kept
+    path = tmp_path / "odd.csv"
+    odd.to_csv(path, index=False)
+
+    df = meta.build_meta(MODEL, "gender", pairs_csv=path, exclude={})
+
+    assert gone not in set(df["item_id"]) and keep in set(df["item_id"])
+    assert df.attrs["dropped_diff_outside_word"] == [gone]

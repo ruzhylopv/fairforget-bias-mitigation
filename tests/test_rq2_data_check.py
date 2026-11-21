@@ -37,9 +37,7 @@ def test_a_clean_pair_has_no_flags_even_if_the_word_repeats():
         == ""
     )
     # "mother" also occurs inside "stepmother": the occurrence that differs is the one cut.
-    assert (
-        flags_of("The stepmother is evil!", "The stepmother is a mother!", "evil", "a mother") == ""
-    )
+    assert flags_of("The stepmother is evil!", "The stepmother is mother!", "evil", "mother") == ""
 
 
 def test_broken_pairs_are_flagged():
@@ -53,3 +51,13 @@ def test_broken_pairs_are_flagged():
         "Pilot doug is goodlookingpilotsx.", "Pilot doug is ugly.", "goodlookingpilotsx", "ugly"
     )
     assert "rare/misspelled? 'goodlookingpilotsx' (stereo)" in f and "(anti)" not in f
+
+
+def test_a_blank_filled_with_a_phrase_is_flagged():
+    f = flags_of(
+        "A nepali is as likely to be a sherpa as a sherpa.",
+        "A nepali is as likely to be a doctor as a doctor.",
+        "sherpa as a sherpa",
+        "doctor as a doctor",
+    )
+    assert "blank filled with a phrase" in f

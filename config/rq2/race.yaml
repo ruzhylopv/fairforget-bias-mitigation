@@ -3,7 +3,7 @@
 #
 # exclude_items: pairs left out of the meta table (both sentences), item_id -> reason. Only
 #   structurally broken pairs: the first differing token is not in the attribute word, or the
-#   blank was filled with a run-together sentence / the same phrase twice.
+#   blank was filled with a run-together sentence or a phrase (found in gate 1 check 4, 2026-11-21).
 # misspelled: typos and non-words (wordfreq zipf 0, checked by hand); probing.controls stats
 #   drops their pairs in robustness_no_misspellings.csv only.
 # Not listed (zipf 0 but kept as they are): compounds written without a hyphen or space
@@ -28,6 +28,13 @@ exclude_items:
     anti-stereotype is a run-together sentence ("allgreeksarenotloud")
   66317ad75c763ba08fbd0553df8e6dfb: >-
     anti-stereotype is a run-together sentence ("albaniansareverylovelypoeple")
+  784a9a4767261b9bc9660e440dc354d1: >-
+    blank filled with a phrase ("alcoholism but are alcoholism" / "contributors but are contributors"):
+    first and last subtoken are the same token
+  94cc022d32961945fe79102b0c432d4b: >-
+    blank filled with a phrase ("sherpa as a sherpa" / "doctor as a doctor")
+  3e9887302e9f3293819245790a1c0dbf: >-
+    blank filled with a phrase ("snobs that i have met but my new neighbor is very snobs" / "humble ...")
 
 misspelled:
   - adventerous

@@ -18,6 +18,8 @@ from rmu.config import repo_path
 
 PAIRS_CSV = "results/tokenization-check-nov17/pairs.csv"
 PUNCT = (".", "!", "?")
+# Tokenization-check classes where the first differing token is not part of the attribute word.
+OUTSIDE_WORD = ("before_word", "after_word")
 
 
 def word_start(sentence: str, word: str, other: str) -> int:
@@ -83,6 +85,12 @@ def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.D
     differing token is the sentence's first token, which happens only for tokenizers without
     BOS (Qwen3: the attribute word starts the sentence): that token has no context and no
     log-probability (``ell``). Their item ids are in ``df.attrs["dropped_no_context"]``.
+
+    Also dropped: pairs whose first differing token lies outside the attribute word
+    (``first_diff_class`` before_word / after_word; Qwen3 attaches the space before "rome" to
+    the previous token, so that token differs but carries nothing of the word). A first
+    difference inside the word (mid_word: "ir|aq" / "ir|an") is kept. Item ids in
+    ``df.attrs["dropped_diff_outside_word"]``. lapa and gemma3 have neither kind.
     """
     if exclude is None:
         exclude = bias_config(bias)["exclude_items"]
@@ -98,6 +106,11 @@ def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.D
     no_context = (pairs["first_diff_stereo"] == 0) | (pairs["first_diff_anti"] == 0)
     dropped = pairs.loc[no_context, "item_id"].tolist()
     pairs = pairs[~no_context].reset_index(drop=True)
+    outside = pairs["first_diff_class_stereo"].isin(OUTSIDE_WORD) | pairs[
+        "first_diff_class_anti"
+    ].isin(OUTSIDE_WORD)
+    dropped_outside = pairs.loc[outside, "item_id"].tolist()
+    pairs = pairs[~outside].reset_index(drop=True)
 
     stereo = _side_rows(pairs, "stereo", "anti", 1, model)
     anti = _side_rows(pairs, "anti", "stereo", 0, model)
@@ -109,6 +122,7 @@ def build_meta(model: str, bias: str, pairs_csv=PAIRS_CSV, exclude=None) -> pd.D
     df = df[META_COLUMNS]
     validate_meta(df)
     df.attrs["dropped_no_context"] = dropped
+    df.attrs["dropped_diff_outside_word"] = dropped_outside
     return df
 
 
@@ -118,7 +132,9 @@ def describe(df: pd.DataFrame, n_excluded: int = 0) -> str:
     bias = ", ".join(sorted(set(df["bias_type"])))
     lines = [
         f"rows: {len(df)} (excluded items: {n_excluded}, see config/rq2/{bias}.yaml; "
-        f"dropped, attribute word first and no BOS: {len(df.attrs.get('dropped_no_context', []))})",
+        f"dropped, attribute word first and no BOS: {len(df.attrs.get('dropped_no_context', []))}"
+        f"; first difference outside the word: "
+        f"{len(df.attrs.get('dropped_diff_outside_word', []))})",
         f"targets: {df['target'].nunique()}",
         f"S=1 / S=0: {(df['S'] == 1).sum()} / {(df['S'] == 0).sum()}",
         f"pairs with target_after_word (stereotype row): {int(stereo['target_after_word'].sum())}",
@@ -153,6 +169,7 @@ def main():
             "excluded_items": exclude,
             # No BOS and the attribute word first: no context, no ell (see build_meta).
             "dropped_no_context": df.attrs["dropped_no_context"],
+            "dropped_diff_outside_word": df.attrs["dropped_diff_outside_word"],
         },
     )
     print(describe(df, len(exclude)))
