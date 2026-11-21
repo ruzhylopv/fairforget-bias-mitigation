@@ -7,6 +7,36 @@ misspelled pair, see `config/rq2/gender.yaml`). Code: `src/probing/`. Every step
 `--model` and `--bias` (default `gender`) and finds its files through
 `probing.io.run_paths(model, bias)` (see [Files](#files)).
 
+## One command
+
+```bash
+make rq2 MODEL=qwen3-8b BIAS=race              # on the login node: two Slurm jobs
+make rq2 MODEL=qwen3-8b BIAS=race DRY_RUN=1    # print the steps and what is already done
+```
+
+`slurm/rq2.sh` first dry-runs `python -m probing.pipeline` on the login node (a model missing
+from `pairs.csv`, card [7], or a missing `config/rq2/{bias}.yaml`, card [6], fails here), then
+submits:
+
+- **job A** (`--stage quick`, GPU node, ~1 h for gender): meta → extraction → gate 1
+  (`scripts/check_extraction.py --gpu` → `gate1.txt`) → probes → null with
+  `quick_null_seeds` (5) → C grid for the probes whose C hit the bottom of the grid → stats
+  (`gate2.txt`);
+- **job B** (`--stage null`, `--dependency=afterok:A`): the null with `null_seeds` (100,
+  `config/rq2/pipeline.yaml`) → stats. It refuses to start unless `gate2.txt` is all PASS.
+  `NULL_PIECES=n` splits it into n jobs in a row (`afterany`), each continuing the last. If A
+  fails, B stays pending forever: `scancel` it.
+
+Both jobs use the whole node (288 CPUs). Each step checks its outputs first and logs
+`done, skipping (...)` or `running (...)`: complete activations, `gate1.txt` (or a passing
+`acts/check_extraction.json`) all PASS, probes for every layer `0..n_layers` (from
+`acts/run.json`, which extraction fills with `len(get_decoder_layers(model)) + 1` hidden
+states), null seeds complete. `stats` always runs (minutes). So after a failure or a time
+limit, **submit the same line again**. The driver stops after a gate that is not all PASS,
+and also when a step has to run while results of later steps exist (they would be stale):
+then move those away by hand. The outcome of each stage goes to `run.json`
+(`pipeline quick` / `pipeline null`).
+
 ## The four steps
 
 1. **Metadata** (CPU): one row per sentence with its label and token positions, built from the

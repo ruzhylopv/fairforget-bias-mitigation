@@ -133,10 +133,14 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
     Returns ``acts`` ({position: [N x hidden float32 array per hidden state]}), ``ell`` (N,)
     and ``checks`` (decode mismatches, padding consistency).
     """
+    from rmu.utils import get_decoder_layers
+
     model.eval()
     device = model.get_input_embeddings().weight.device
     text_config = model.config.get_text_config()
-    n_states = text_config.num_hidden_layers + 1
+    # Embedding output + one per decoder layer; saved in run.json as n_hidden_states, which
+    # every later step reads (never a hard-coded 0-48).
+    n_states = len(get_decoder_layers(model)) + 1
     hidden = text_config.hidden_size
 
     acts = {p: [[] for _ in range(n_states)] for p in POSITIONS}

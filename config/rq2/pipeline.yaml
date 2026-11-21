@@ -1,0 +1,8 @@
+# RQ2 pipeline settings (read by probing.pipeline).
+#
+# quick_null_seeds: seeds of the within-pair null in --stage quick (gate 2 needs it).
+# null_seeds: seeds of the long null in --stage null (p-values: smallest p = 1 / (seeds + 1)).
+#   The quick seeds are the first of these, so stage null only adds the rest.
+
+quick_null_seeds: 5
+null_seeds: 100

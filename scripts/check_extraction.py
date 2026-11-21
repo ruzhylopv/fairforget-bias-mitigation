@@ -21,8 +21,9 @@ A wrong activation file looks exactly like a right one, so before any probe is t
                               mean row norm and the largest |value| per layer.
 
 Prints PASS / FAIL per check, writes ``{acts}/check_extraction.json`` (``{acts}`` =
-``{rq2_root}/{bias}/{model}/acts``), records the statuses as step "check_extraction" in
-``results/rq2/{bias}/{model}/run.json`` and exits with status 1 if any check fails.
+``{rq2_root}/{bias}/{model}/acts``) and ``gate1.txt`` in ``results/rq2/{bias}/{model}/``
+(probing.gates; open until checks 1-2 ran with --gpu), records the statuses as step
+"check_extraction" in that folder's ``run.json`` and exits with status 1 if any check fails.
 
 Usage:
     # login node (CPU checks 3-5, a few minutes: reads all layer files)
@@ -44,6 +45,7 @@ import numpy as np
 import torch
 
 from probing.extract import _decode_span, _model_inputs, gather_positions, word_logprob
+from probing.gates import gate1_items, write_gate
 from probing.io import POSITION_COLUMNS, POSITIONS, load_layer, load_meta, record_run, run_paths
 from probing.io import validate_meta as _validate_meta
 from rmu.config import resolve_model
@@ -533,6 +535,7 @@ def main(argv=None):
         "checks": res.checks,
     }
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_gate(paths.results / "gate1.txt", gate1_items(payload))
     record_run(
         paths,
         "check_extraction",
@@ -544,7 +547,7 @@ def main(argv=None):
         },
     )
     print("\n" + "\n".join(f"{c['status']}  {name}" for name, c in res.checks.items()))
-    print(f"{'ALL PASS' if res.ok else 'FAILED'}; wrote {out}")
+    print(f"{'ALL PASS' if res.ok else 'FAILED'}; wrote {out} and {paths.results / 'gate1.txt'}")
     sys.exit(0 if res.ok else 1)
 
 

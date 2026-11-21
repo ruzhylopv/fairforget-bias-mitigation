@@ -8,11 +8,12 @@
 #   JOB_TIME=00:20:00 slurm/submit.sh "smoke test" python scripts/smoke_test.py
 #
 # Optional settings: JOB_TIME (default 01:00:00), JOB_NAME (default rmu),
-# JOB_CPUS (--cpus-per-task, e.g. 72 for CPU-parallel work such as probing.probe).
+# JOB_CPUS (--cpus-per-task, e.g. 72 for CPU-parallel work such as probing.probe),
+# JOB_DEPENDENCY (sbatch --dependency, e.g. afterok:1234567: start only after that job succeeded).
 set -eo pipefail
 
 if [[ $# -lt 2 ]]; then
-    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
 fi
 
@@ -25,9 +26,13 @@ shift
 
 cd "$REPO_DIR"
 job_id=$(sbatch --parsable --time="${JOB_TIME:-01:00:00}" --job-name="${JOB_NAME:-rmu}" \
-    ${JOB_CPUS:+--cpus-per-task="$JOB_CPUS"} slurm/run.sbatch "$@")
+    ${JOB_CPUS:+--cpus-per-task="$JOB_CPUS"} ${JOB_DEPENDENCY:+--dependency="$JOB_DEPENDENCY"} \
+    slurm/run.sbatch "$@")
 run_dir=$(python -m rmu.config paths.runs_root)/$job_id
 echo "Submitted job $job_id"
 echo "  log:     $TEAM_SCRATCH/logs/${JOB_NAME:-rmu}-$job_id.out"
 echo "  outputs: $run_dir/"
+if [[ -n ${JOB_DEPENDENCY:-} ]]; then
+    echo "  waits:   $JOB_DEPENDENCY"
+fi
 echo "  status:  squeue -j $job_id     cancel: scancel $job_id"

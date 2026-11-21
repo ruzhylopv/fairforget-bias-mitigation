@@ -16,7 +16,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
-from plot_probes import GRID, INK_2, LABELS, MUTED, SERIES, layer_axis  # noqa: E402
+from plot_probes import (  # noqa: E402
+    GRID,
+    INK_2,
+    LABELS,
+    MUTED,
+    SERIES,
+    layer_axis,
+    probe_settings,
+)
 
 from probing.io import run_paths  # noqa: E402
 
@@ -69,8 +77,10 @@ def main():
     ap.add_argument("--root", default=None, help="data root, as given to probing.controls")
     args = ap.parse_args()
 
-    results = run_paths(args.model, args.bias, root=args.root).results
+    paths = run_paths(args.model, args.bias, root=args.root)
+    results = paths.results
     ci = pd.read_csv(results / "ci.csv")
+    probe_settings(paths, ci[ci["layer"] >= 0])
     null_path = results / "null_scores.csv"
     null = pd.read_csv(null_path) if null_path.exists() else None
     n_seeds = 0 if null is None else null["seed"].nunique()

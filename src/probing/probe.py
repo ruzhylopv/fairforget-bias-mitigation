@@ -29,7 +29,9 @@ with ``{probes}`` = ``{rq2_root}/{bias}/{model}/probes`` and ``{results}`` =
 
 Usage:
     python -m probing.probe --model lapa-12b-instruct --bias gender \\
-        --positions first_diff,last_subtok --layers 0-48 [--root PATH] [--n_jobs -1]
+        --positions first_diff,last_subtok [--layers 0-48] [--root PATH] [--n_jobs -1]
+
+``--layers`` defaults to every hidden state: 0 .. n_layers, read from ``{acts}/run.json``.
 """
 
 import argparse
@@ -186,6 +188,41 @@ def fit_baseline(ell, y, folds, C=BASELINE_C):
     return {"z": z, "p": p, "C": {int(f): C for f in np.unique(folds)}, "gamma": gamma}
 
 
+class _RecordingGroupKFold(GroupKFold):
+    """GroupKFold that records the groups each ``split`` call receives."""
+
+    def __init__(self, n_splits):
+        super().__init__(n_splits)
+        self.seen = []
+
+    def split(self, X, y=None, groups=None):
+        self.seen.append(None if groups is None else np.unique(groups))
+        return super().split(X, y, groups)
+
+
+def inner_groups_check(n_targets=12, pairs_per_target=6, seed=0) -> tuple:
+    """(ok, detail): run ``fit_layer`` on tiny synthetic pairs with a recording inner CV and
+    check that every outer fold's inner split received exactly the training targets (the
+    groups must reach the inner CV, or targets leak between inner folds). Takes < 1 s."""
+    rng = np.random.default_rng(seed)
+    targets = np.repeat([f"t{i}" for i in range(n_targets)], 2 * pairs_per_target)
+    y = np.tile([1, 0], n_targets * pairs_per_target)
+    X = rng.standard_normal((len(y), 4)) + y[:, None]
+    meta = pd.DataFrame({"target": targets})
+    folds = outer_folds(meta)
+    inner = _RecordingGroupKFold(N_INNER)
+    fit_layer(X, y, targets, folds, grid=(1.0,), inner_cv=inner)
+    expected = [np.unique(targets[folds != f]) for f in np.unique(folds)]
+    ok = len(inner.seen) == len(expected) and all(
+        s is not None and np.array_equal(s, e) for s, e in zip(inner.seen, expected)
+    )
+    detail = (
+        f"fit_layer on synthetic data: {len(inner.seen)} inner splits for {len(expected)} outer "
+        f"folds, each {'with' if ok else 'WITHOUT'} exactly the training targets as groups"
+    )
+    return ok, detail
+
+
 def unscale(pipe):
     """(w_raw, b_raw) with ``X @ w_raw + b_raw == pipe.decision_function(X)`` on raw X.
 
@@ -308,7 +345,9 @@ def main(argv=None):
     ap.add_argument("--model", required=True)
     ap.add_argument("--bias", default="gender", help="StereoSet bias type (default: gender)")
     ap.add_argument("--positions", default=",".join(POSITIONS))
-    ap.add_argument("--layers", default="0-48")
+    ap.add_argument(
+        "--layers", default=None, help="e.g. 0-48 or 18-24 (default: every hidden state)"
+    )
     ap.add_argument(
         "--root",
         default=None,
@@ -328,8 +367,8 @@ def main(argv=None):
     unknown = set(positions) - set(POSITIONS)
     if unknown:
         raise ValueError(f"unknown positions {sorted(unknown)}; expected {POSITIONS}")
-    layers = parse_layers(args.layers)
     n_layers = n_decoder_layers(paths)
+    layers = parse_layers(args.layers) if args.layers else list(range(n_layers + 1))
     if max(layers) > n_layers:
         raise ValueError(f"--layers goes to {max(layers)}; {args.model} has {n_layers} layers")
 

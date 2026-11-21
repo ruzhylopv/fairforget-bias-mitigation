@@ -87,7 +87,9 @@ def main():
         print(f"{position}: {len(layers)} layers, {x.shape} -> {path.parent}")
     # As probing.extract writes it; the probes read the number of layers from here.
     info = {"model": args.model, "bias": args.bias, "fake": True}
-    info |= {"n_hidden_states": N_HIDDEN_STATES, "hidden_size": args.hidden}
+    # A fake model with exactly these hidden states (0..max layer): probing.probe and the
+    # pipeline treat them as the whole model.
+    info |= {"n_hidden_states": max(layers) + 1, "hidden_size": args.hidden}
     info["store_dtype"] = "float16"
     (paths.acts / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     planted = sorted(signal & set(layers))

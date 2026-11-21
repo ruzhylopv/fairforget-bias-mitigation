@@ -31,7 +31,7 @@ Usage (on a CPU node; ``probing.probe`` must have run, see docs/rq2_probing.md):
 
     python -m probing.controls null --model lapa-12b-instruct --bias gender --seeds 0-4
     python -m probing.controls null --model lapa-12b-instruct --bias gender --seeds 0-99  # resumes
-    python -m probing.controls cgrid --model lapa-12b-instruct --bias gender --layers 0-7
+    python -m probing.controls cgrid --model lapa-12b-instruct --bias gender   # C at low edge
     python -m probing.controls stats --model lapa-12b-instruct --bias gender
     uv run python scripts/plot_controls.py --model lapa-12b-instruct --bias gender   # laptop
 """
@@ -46,6 +46,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from probing.gates import write_gate
 from probing.io import (
     POSITIONS,
     bias_config,
@@ -67,6 +68,7 @@ from probing.probe import (
     c_edge,
     fit_baseline,
     fit_layer,
+    inner_groups_check,
     outer_folds,
     pair_correct,
     pair_flag,
@@ -581,14 +583,8 @@ def gate_checks(ctx, summary, preds, null=None, cgrid=None) -> list:
             "_together",
         )
     )
-    items.append(
-        (
-            "groups reach the inner CV",
-            None,
-            "unit test tests/test_probing_probe.py::test_fit_layer_passes_training_groups_to_the"
-            f"_inner_cv (inner GroupKFold({N_INNER}))",
-        )
-    )
+    ok, detail = inner_groups_check()
+    items.append(("groups reach the inner CV", ok, f"{detail} (inner GroupKFold({N_INNER}))"))
 
     # Probe and baseline on the same folds.csv, and the stored predictions give summary.csv.
     same = all((f == folds).all() for _, _, f in preds.values())
@@ -607,9 +603,16 @@ def gate_checks(ctx, summary, preds, null=None, cgrid=None) -> list:
         )
     )
 
-    # C grid edge: from cgrid (layers 0-7 with smaller C).
-    if cgrid is None or cgrid.empty:
-        items.append(("chosen C not at a grid edge, or explained", None, "no c_grid_low.csv yet"))
+    # C at the bottom of the grid: refit those probes with smaller C (cgrid); fine if the
+    # scores barely move.
+    name = "chosen C not at a grid edge, or explained"
+    need = low_edge_probes(summary)
+    have = set() if cgrid is None else set(zip(cgrid["position"], cgrid["layer"].astype(int)))
+    if not need:
+        items.append((name, True, "no probe chose the smallest C"))
+    elif cgrid is None or cgrid.empty or not set(need) <= have:
+        missing = sorted(set(need) - have)
+        items.append((name, None, f"C at the bottom of the grid, no cgrid run yet for {missing}"))
     else:
         d_acc = (cgrid["acc"] - cgrid["acc_wp5"]).abs().max()
         d_pair = (cgrid["acc_pair"] - cgrid["acc_pair_wp5"]).abs().max()
@@ -626,9 +629,13 @@ def gate_checks(ctx, summary, preds, null=None, cgrid=None) -> list:
     return items
 
 
-def format_gate(items) -> str:
-    mark = {True: "[x]", False: "[ ] FAIL", None: "[?]"}
-    return "\n".join(f"{mark[ok]} {name}\n      {detail}" for name, ok, detail in items)
+def low_edge_probes(summary) -> list:
+    """[(position, layer)] of the probes where some outer fold chose the smallest C."""
+    if summary is None:
+        return []
+    s = summary[(summary["position"] != BASELINE[0])]
+    s = s[s["C_edge"].fillna("").astype(str).str.contains("low")]
+    return sorted(zip(s["position"], s["layer"].astype(int)))
 
 
 # --------------------------------------------------------------------------- CLI
@@ -651,7 +658,11 @@ def main(argv=None):
             help="data root (default: paths.rq2_root); results then go to {root}/results",
         )
         s.add_argument("--positions", default=",".join(POSITIONS))
-        s.add_argument("--layers", default=None, help="default: every layer in summary.csv")
+        s.add_argument(
+            "--layers",
+            default=None,
+            help="default: every layer in summary.csv (cgrid: the probes with C at the low edge)",
+        )
         s.add_argument("--n_jobs", type=int, default=-1)
     sub.choices["null"].add_argument("--seeds", default="0-4", help="e.g. 0-4 or 0-99")
     sub.choices["cgrid"].add_argument("--grid", default="1e-6,1e-5,1e-4,1e-3")
@@ -689,11 +700,17 @@ def main(argv=None):
     elif args.cmd == "cgrid":
         grid = tuple(float(c) for c in args.grid.split(","))
         ctx_grid = ctx | {"grid": grid}
+        if args.layers:
+            keys = [(p, k) for p in positions for k in layers]
+        else:  # the probes where some fold chose the smallest C of the WP5 grid
+            keys = [(p, k) for p, k in low_edge_probes(summary) if p in positions]
+        if not keys:
+            print("cgrid: no probe chose the smallest C; nothing to refit")
+            return
         tasks = [
             {k: ctx_grid[k] for k in ("paths", "y", "groups", "folds", "flag", "grid")}
             | {"position": p, "k": k}
-            for p in positions
-            for k in layers
+            for p, k in keys
         ]
         rows = []
         n_jobs = min(len(tasks), usable_cpus()) if args.n_jobs == -1 else args.n_jobs
@@ -710,7 +727,7 @@ def main(argv=None):
                 for r in df.itertuples()
             ]
         df.to_csv(results / "c_grid_low.csv", index=False)
-        record_run(paths, "controls cgrid", settings | {"grid": list(grid)})
+        record_run(paths, "controls cgrid", {"probes": keys, "grid": list(grid)})
         for r in df.itertuples():
             print(
                 f"  {r.position:11s} layer {r.layer}: acc {r.acc:.3f} (WP5 {r.acc_wp5:.3f})  pair "
@@ -761,11 +778,9 @@ def main(argv=None):
         cg_path = results / "c_grid_low.csv"
         cgrid = pd.read_csv(cg_path) if cg_path.exists() else None
 
-        report = [format_gate(gate_checks(ctx, summary, preds, null, cgrid)), ""]
-        report += fixed_depth_report(ci, pv, paths, n_layers)
-        report += peak_report(ci, rob, pv, null)
-        text = "\n".join(report)
-        (results / "gate2.txt").write_text(text + "\n", encoding="utf-8")
+        report = fixed_depth_report(ci, pv, paths, n_layers) + peak_report(ci, rob, pv, null)
+        gate = gate_checks(ctx, summary, preds, null, cgrid)
+        text = write_gate(results / "gate2.txt", gate, report)
         record_run(
             paths,
             "controls stats",

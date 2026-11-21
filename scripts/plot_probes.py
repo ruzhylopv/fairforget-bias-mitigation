@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import matplotlib
@@ -63,11 +64,30 @@ plt.rcParams.update(
 )
 
 
+# Decoder layers of the model (the last hidden state is after the final norm); set by
+# probe_settings() from the run, so the axis label is right for every model.
+N_LAYERS = None
+GRID_C = (1e-4, 1e-3, 1e-2, 1e-1, 1.0)  # probing.probe.GRID, if the run did not record its own
+
+
+def probe_settings(paths, summary):
+    """(n_layers, grid) from the "probe" step of the run's run.json; else from the summary and
+    the default grid. Also sets N_LAYERS for the axis label."""
+    global N_LAYERS
+    probe = {}
+    if paths.run_json.exists():
+        probe = json.loads(paths.run_json.read_text(encoding="utf-8")).get("steps", {})
+        probe = probe.get("probe", {})
+    N_LAYERS = probe.get("n_layers") or int(summary["layer"].max())
+    return N_LAYERS, tuple(probe.get("grid") or GRID_C)
+
+
 def layer_axis(ax, layers, margin=7.0):
     ax.set_xlim(layers.min() - 0.5, layers.max() + margin)  # right margin for the baseline label
     step = 8 if layers.max() - layers.min() > 16 else 1
     ax.set_xticks(np.arange(layers.min(), layers.max() + 1, step))
-    ax.set_xlabel("layer (0 = embeddings, 48 = after final norm)")
+    last = f", {N_LAYERS} = after final norm" if N_LAYERS else ""
+    ax.set_xlabel(f"layer (0 = embeddings{last})")
 
 
 def draw_metric(ax, probes, base, col):
@@ -205,10 +225,12 @@ def main():
     out = Path(args.out) if args.out else paths.results
     out.mkdir(parents=True, exist_ok=True)
 
+    probe_settings(paths, summary)
     title = f"{args.model}, {args.bias}"
     plot_overall(probes, base, title, out / "accuracy_by_layer.png")
     plot_subsets(probes, base, title, out / "accuracy_by_subset.png")
-    plot_C(probes, (1e-4, 1e-3, 1e-2, 1e-1, 1.0), out / "chosen_C.png")
+    _, grid = probe_settings(paths, summary)
+    plot_C(probes, grid, out / "chosen_C.png")
     print(f"wrote accuracy_by_layer.png, accuracy_by_subset.png, chosen_C.png to {out}")
 
 

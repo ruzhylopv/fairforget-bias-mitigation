@@ -1,4 +1,4 @@
-.PHONY: setup test lint format env smoke submit evaluate unlearn-eval jupyter tunnel jobs watch
+.PHONY: setup test lint format env smoke submit rq2 evaluate unlearn-eval jupyter tunnel jobs watch
 
 # ---- Laptop -------------------------------------------------------------
 
@@ -36,11 +36,26 @@ smoke:
 # Any command as a GPU job, e.g.
 #   make submit PURPOSE="pilot: RMU on Lapa" CMD="python -m rmu.unlearn --model_name_or_path lapa-12b-instruct"
 # Optional: JOB_TIME=02:00:00 (default 01:00:00), JOB_CPUS=72 (CPU cores for the task;
-# default: Slurm's, possibly 1). The node is billed whole either way.
+# default: Slurm's, possibly 1; the node is billed whole either way), JOB_DEPENDENCY=afterok:<id>
+# (start only after that job succeeded).
 submit:
 	@test -n "$(PURPOSE)" -a -n "$(CMD)" || \
 		{ echo 'usage: make submit PURPOSE="..." CMD="python -m ..." [JOB_TIME=hh:mm:ss] [JOB_CPUS=n]'; exit 1; }
-	JOB_TIME=$(or $(JOB_TIME),01:00:00) JOB_CPUS=$(JOB_CPUS) slurm/submit.sh "$(PURPOSE)" $(CMD)
+	JOB_TIME=$(or $(JOB_TIME),01:00:00) JOB_CPUS=$(JOB_CPUS) JOB_DEPENDENCY=$(JOB_DEPENDENCY) \
+		slurm/submit.sh "$(PURPOSE)" $(CMD)
+
+# RQ2 probing pipeline for one model and bias type (docs/rq2_probing.md): a GPU job for
+# everything up to gate 2, then the long null in a second job that starts only if the first
+# succeeded. Submitting the same line again continues an interrupted run.
+#   make rq2 MODEL=qwen3-8b BIAS=race                 # both jobs
+#   make rq2 MODEL=qwen3-8b BIAS=race STAGE=quick     # or STAGE=null
+#   make rq2 MODEL=qwen3-8b BIAS=race DRY_RUN=1       # only print the steps and what is done
+# Optional: QUICK_TIME=02:00:00, NULL_TIME=12:00:00, NULL_PIECES=2 (null as 2 jobs in a row)
+rq2:
+	@test -n "$(BIAS)" || \
+		{ echo 'usage: make rq2 MODEL=<model> BIAS=<bias> [STAGE=all|quick|null] [DRY_RUN=1]'; exit 1; }
+	DRY_RUN=$(DRY_RUN) QUICK_TIME=$(QUICK_TIME) NULL_TIME=$(NULL_TIME) NULL_PIECES=$(NULL_PIECES) \
+		slurm/rq2.sh $(MODEL) $(BIAS) $(or $(STAGE),all)
 
 # Evaluate a model on the BBQ benchmark (defaults to MODEL=lapa-12b-instruct).
 # Usage:
