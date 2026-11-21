@@ -37,6 +37,24 @@ and also when a step has to run while results of later steps exist (they would b
 then move those away by hand. The outcome of each stage goes to `run.json`
 (`pipeline quick` / `pipeline null`).
 
+## Report over all runs
+
+`uv run python scripts/rq2_report.py` (laptop) reads every finished run in
+`results/rq2/{bias}/{model}/` and writes to `results/rq2/`:
+
+- `all_runs.csv`: every (position, layer, metric) row of every run (`ci.csv` joined with
+  `pvalues.csv` and `summary.csv`) with `model`, `bias` and run-level columns (layers, pairs,
+  targets, fixed layer, gate status). Everything below is made from it.
+- `report_table.csv` / `.tex` (booktabs): one row per (model, bias): `ell` and layer 0 with
+  CIs; at the fixed depth the probe, its gaps vs `ell` and vs layer 0, and the gap split by
+  target before / after the word; the best layer as relative depth with `p_corr` (post hoc);
+  gates; a flag below `few_targets_below` targets (`config/rq2/report.yaml`).
+- `fig_gap_by_depth` (small multiples, bias type × model, gap vs `ell` against relative
+  depth) and `fig_forest` (both gaps at the fixed depth, one row per run), PNG + PDF.
+
+Runs are compared by their gaps, not raw accuracy: each has its own baseline. `--metric acc`
+for per-sentence accuracy (default: pairwise).
+
 ## The four steps
 
 1. **Metadata** (CPU): one row per sentence with its label and token positions, built from the

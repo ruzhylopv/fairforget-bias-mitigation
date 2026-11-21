@@ -786,6 +786,8 @@ def main(argv=None):
             "controls stats",
             settings
             | {
+                "n_pairs": int(len(y) // 2),
+                "n_targets": int(len(np.unique(ctx["groups"]))),
                 "n_boot": args.n_boot,
                 "boot_seed": args.boot_seed,
                 "null_seeds_B": None if pv is None else int(pv["B"].iloc[0]),

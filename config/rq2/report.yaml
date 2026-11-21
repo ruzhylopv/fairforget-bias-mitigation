@@ -8,6 +8,10 @@
 #   with its max-over-layers corrected p-value (p_corr). lapa/gender is the run it was chosen
 #   on; its report must say so.
 
+# Runs with fewer targets than this are flagged in the report (religion has 12): the bootstrap
+# over targets and the grouped CV are then coarse.
+few_targets_below: 20
+
 fixed_depth:
   layer: 20
   n_layers: 48 # rel_depth = 20 / 48 = 0.417
