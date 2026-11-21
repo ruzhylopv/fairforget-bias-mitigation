@@ -34,8 +34,10 @@ def test_check_inputs_stops_for_models_without_pairs_and_bias_without_config(tmp
         pipeline.check_inputs(
             "llama31-8b-instruct", "gender", io.run_paths("x", "gender", tmp_path)
         )
-    with pytest.raises(pipeline.Stop, match=r"race.yaml is missing.*card \[6\]"):
-        pipeline.check_inputs("qwen3-8b", "race", io.run_paths("qwen3-8b", "race", tmp_path))
+    with pytest.raises(pipeline.Stop, match=r"religion.yaml is missing.*card \[6\]"):
+        pipeline.check_inputs(
+            "qwen3-8b", "religion", io.run_paths("qwen3-8b", "religion", tmp_path)
+        )
     pipeline.check_inputs("qwen3-8b", "gender", io.run_paths("qwen3-8b", "gender", tmp_path))
 
 
@@ -94,3 +96,13 @@ def test_failed_gates_are_not_skipped_and_block_the_null(tmp_path):
     (run.paths.results / "gate2.txt").write_text("[x] a\n      ok\n[ ] FAIL b\n      bad\n")
     with pytest.raises(pipeline.Stop, match=r"needs gate2.txt all PASS.*FAIL b"):
         pipeline.run_stage(run, "null", log=lambda s: None)
+
+
+def test_extract_stage_is_the_start_of_quick(tmp_path):
+    names = [s.name for s in pipeline.steps("extract")]
+    assert names == ["meta", "extract", "gate 1"]
+    assert names == [s.name for s in pipeline.steps("quick")][:3]
+    run = fake_run(tmp_path)
+    out = pipeline.run_stage(run, "extract", log=lambda s: None)
+    assert all(v.startswith("skipped") for v in out.values())  # fake data: all three done
+    assert not run.paths.summary.exists()  # no probes in this stage

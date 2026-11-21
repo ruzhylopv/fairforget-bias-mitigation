@@ -27,6 +27,11 @@ submits:
   `NULL_PIECES=n` splits it into n jobs in a row (`afterany`), each continuing the last. If A
   fails, B stays pending forever: `scancel` it.
 
+`STAGE=extract` submits only meta → extraction → gate 1 as one short job (45 min): in a busy
+queue short jobs start sooner, and a later `quick` skips those steps. Before a bias type's first
+run, `scripts/rq2_data_check.py --bias B` lists misspelling candidates and broken pairs for its
+`config/rq2/{bias}.yaml` (card [6]; reports in `results/rq2/data_check/`).
+
 Both jobs use the whole node (288 CPUs). Each step checks its outputs first and logs
 `done, skipping (...)` or `running (...)`: complete activations, `gate1.txt` (or a passing
 `acts/check_extraction.json`) all PASS, probes for every layer `0..n_layers` (from

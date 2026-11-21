@@ -57,13 +57,16 @@ submit:
 # succeeded. Submitting the same line again continues an interrupted run.
 #   make rq2 MODEL=qwen3-8b BIAS=race                 # both jobs
 #   make rq2 MODEL=qwen3-8b BIAS=race STAGE=quick     # or STAGE=null
+#   make rq2 MODEL=qwen3-8b BIAS=race STAGE=extract   # meta, extraction, gate 1: a short job
 #   make rq2 MODEL=qwen3-8b BIAS=race DRY_RUN=1       # only print the steps and what is done
 # STAGE is read from the command line only: the JUPITER Stages module exports STAGE=2026.
-# Optional: QUICK_TIME=02:00:00, NULL_TIME=12:00:00, NULL_PIECES=2 (null as 2 jobs in a row)
+# Optional: QUICK_TIME=02:00:00, NULL_TIME=12:00:00, EXTRACT_TIME=00:45:00,
+# NULL_PIECES=2 (null as 2 jobs in a row)
 rq2:
 	@test -n "$(BIAS)" || \
 		{ echo 'usage: make rq2 MODEL=<model> BIAS=<bias> [STAGE=all|quick|null] [DRY_RUN=1]'; exit 1; }
 	DRY_RUN=$(DRY_RUN) QUICK_TIME=$(QUICK_TIME) NULL_TIME=$(NULL_TIME) NULL_PIECES=$(NULL_PIECES) \
+		EXTRACT_TIME=$(EXTRACT_TIME) \
 		slurm/rq2.sh $(MODEL) $(BIAS) $(if $(filter command line,$(origin STAGE)),$(STAGE),all)
 
 # Evaluate a model on the BBQ benchmark (defaults to MODEL=lapa-12b-instruct).

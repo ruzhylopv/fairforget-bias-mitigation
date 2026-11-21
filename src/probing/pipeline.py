@@ -5,6 +5,8 @@ Stages::
     quick   meta -> extract -> gate 1 (check_extraction --gpu) -> probe -> null (quick seeds)
             -> cgrid -> stats (gate 2)                  GPU job, about 1 h for gender
     null    [gate2.txt all PASS] -> null (all seeds) -> stats       CPU job, long, resumes
+    extract meta -> extract -> gate 1 only (the start of quick)      GPU job, minutes; a short
+            time limit gets through a busy queue sooner, and quick later skips these steps
 
 Before each step the driver checks whether its outputs are complete and says so ("done,
 skipping: ..." or "running: ..."). ``stats`` always runs: it takes minutes and rewrites
@@ -22,6 +24,7 @@ Usage::
 
     python -m probing.pipeline --model qwen3-8b --bias race --stage quick [--dry_run]
     python -m probing.pipeline --model qwen3-8b --bias race --stage null
+    python -m probing.pipeline --model qwen3-8b --bias race --stage extract
     make rq2 MODEL=qwen3-8b BIAS=race                 # both, as two Slurm jobs
 """
 
@@ -266,6 +269,8 @@ def steps(stage) -> list:
     later_than_extract = lambda run: (  # noqa: E731
         _existing(run.paths.probes / "run.json", run.paths.summary) + later_than_probe(run)
     )
+    if stage == "extract":
+        return steps("quick")[:3]  # meta, extract, gate 1
     if stage == "quick":
         return [
             Step(
@@ -309,7 +314,7 @@ def steps(stage) -> list:
             ),
             stats,
         ]
-    raise ValueError(f"unknown stage {stage!r}; expected quick or null")
+    raise ValueError(f"unknown stage {stage!r}; expected quick, null or extract")
 
 
 def _status(step, run):
@@ -377,7 +382,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True)
     ap.add_argument("--bias", required=True, help="StereoSet bias type")
-    ap.add_argument("--stage", required=True, choices=["quick", "null"])
+    ap.add_argument("--stage", required=True, choices=["quick", "null", "extract"])
     ap.add_argument("--dry_run", action="store_true", help="print the steps, run nothing")
     ap.add_argument("--root", default=None, help="data root (fake data); default rq2_root")
     ap.add_argument("--n_jobs", type=int, default=None, help="passed to probe / controls")
