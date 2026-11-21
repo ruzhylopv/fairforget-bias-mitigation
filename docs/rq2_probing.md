@@ -11,6 +11,25 @@ StereoSet intrasentence gender (dev + test), 1,026 pairs = 2,052 sentences. Code
    `python -m probing.meta --model lapa-12b-instruct --bias_types gender`
 2. **Extraction** (GPU): one frozen forward pass per sentence. Save `hidden_states[k]` at every
    layer and at each token position, and fill `ell` (the attribute word's log-prob) in the meta.
+   `src/probing/extract.py`; a few minutes for 2,052 sentences:
+   ```bash
+   # dry run, first 64 rows, written to {runs_root}/<job>/rq2-dry (rq2_root is not touched)
+   make submit PURPOSE="rq2: extract dry run" \
+     CMD="python -m probing.extract --model lapa-12b-instruct --limit 64" JOB_TIME=00:20:00
+   # full run
+   make submit PURPOSE="rq2: extract lapa gender" \
+     CMD="python -m probing.extract --model lapa-12b-instruct --bias_types gender" \
+     JOB_TIME=00:30:00
+   ```
+   `ell = Σ_{p = first_diff..last_subtok} log softmax(z_{p-1})[x_p]` (summed, float32). For Lapa
+   gender `first_diff` is always the word's first token, so this is the whole word's log-prob.
+   Checks that run every time: `attention_mask.sum() == n_tokens` and BOS for every row, the
+   number of hidden states, finite activations, `ell` finite and ≤ 0, the decoded tokens at the
+   saved positions compared with `word`, and batched vs one-at-a-time activations (left
+   padding). Results and provenance go to `acts/{model}/run.json` (git commit read from `.git`,
+   since compute nodes have no git; versions; job id; max |activation| per layer; mean `ell`
+   by label; attribute-word SS = share of pairs with `ell_stereo > ell_anti`). Existing layer
+   files are only replaced with `--overwrite`.
 3. **Probes** (CPU): per layer, logistic regression `P(S | a_k)` with outer CV grouped by
    `target` and an inner grouped CV that picks C. References: predictability (logistic
    regression on `ell`), lexical (the same probe at layer 0), null (labels swapped within pairs).
@@ -33,7 +52,9 @@ Everything lives under `paths.rq2_root` (`config/default.yaml`, override in `con
 ```
 
 - **Activations = X.** `kk` indexes `hidden_states` (`00` = embeddings, `00..48` for Lapa,
-  hidden size 3840). `position` is `first_diff` or `last_subtok` (`end` comes later).
+  hidden size 3840). Stored as float16; if any activation of a model exceeds the float16 range
+  (65,504), all its layers are stored as float32 instead (`--store_dtype auto`, recorded as
+  `store_dtype` in `run.json`). `load_layer` returns whatever was stored. `position` is `first_diff` or `last_subtok` (`end` comes later).
 - **Metadata = y + groups + bookkeeping.** `S` is the label, `target` the CV group, the rest is
   for positions, filters and sanity checks. Positions depend on the tokenizer, so there is one
   meta file per model.

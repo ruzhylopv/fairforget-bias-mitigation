@@ -95,6 +95,18 @@ def test_save_layer_checks_shape_and_overflow():
         io.save_layer(np.zeros(5), MODEL, "first_diff", 0)
     with pytest.raises(ValueError, match="overflow float16"):
         io.save_layer(np.full((2, 2), 1e5), MODEL, "first_diff", 0)
+    with pytest.raises(ValueError, match="float16 or float32"):
+        io.save_layer(np.zeros((2, 2)), MODEL, "first_diff", 0, dtype="int8")
+
+
+def test_float32_storage_keeps_values_beyond_float16(tmp_root):
+    x = np.array([[1e5, -3.0], [0.5, 7e4]])
+
+    io.save_layer(x, MODEL, "last_subtok", 0, dtype="float32")
+    back = io.load_layer(MODEL, "last_subtok", 0)
+
+    assert back.dtype == np.float32
+    np.testing.assert_array_equal(back, x.astype(np.float32))
 
 
 def test_valid_meta_passes():

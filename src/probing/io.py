@@ -2,7 +2,7 @@
 
 Everything lives under ``paths.rq2_root`` (config/default.yaml)::
 
-    {rq2_root}/acts/{model}/{position}/layer_{kk:02d}.npy   float16, shape (N, hidden)
+    {rq2_root}/acts/{model}/{position}/layer_{kk:02d}.npy   float16 (or float32), (N, hidden)
     {rq2_root}/meta/{model}.csv                              one row per sentence
 
 ``kk`` indexes ``hidden_states`` (00 = embeddings). Row i of the meta CSV is row i of every
@@ -183,18 +183,26 @@ def validate_meta(df: pd.DataFrame) -> None:
 
 
 def load_layer(model: str, position: str, k: int, mmap: bool = True, root=None) -> np.ndarray:
-    """(N, hidden) float16 activations; memory-mapped read-only by default."""
+    """(N, hidden) activations as stored (float16, float32 for models that overflow it).
+
+    Memory-mapped read-only by default.
+    """
     return np.load(layer_path(model, position, k, root), mmap_mode="r" if mmap else None)
 
 
-def save_layer(arr, model: str, position: str, k: int, root=None) -> Path:
-    """Write (N, hidden) activations as float16. The file appears only once fully written."""
+def save_layer(arr, model: str, position: str, k: int, root=None, dtype="float16") -> Path:
+    """Write (N, hidden) activations as ``dtype`` (float16 by default, or float32).
+
+    float16 tops out at 65504; models with larger outlier dimensions are stored as float32
+    (all layers of that model). The file appears only once fully written.
+    """
+    if np.dtype(dtype) not in (np.float16, np.float32):
+        raise ValueError(f"dtype must be float16 or float32, got {dtype!r}")
     arr = np.asarray(arr)
     if arr.ndim != 2:
         raise ValueError(f"activations must be 2-D (N, hidden), got shape {arr.shape}")
     with np.errstate(over="ignore"):
-        half = arr.astype(np.float16, copy=False)
-    # float16 tops out at 65504; Gemma-style models can have outlier dims beyond that.
+        half = arr.astype(dtype, copy=False)
     if np.isfinite(arr).all() and not np.isfinite(half).all():
         raise ValueError(
             f"{model} {position} layer {k}: {int((~np.isfinite(half)).sum())} values overflow "
