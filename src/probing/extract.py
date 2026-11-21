@@ -120,6 +120,22 @@ def _model_inputs(tokenizer, sentences, device):
     }
 
 
+def length_batches(n_tokens, batch_size: int) -> list:
+    """Row indices in batches of equal token length (at most ``batch_size`` rows each).
+
+    No padding means a batch is the same computation as its sentences run one by one. With
+    left padding, some models (Qwen3 in bf16) give activations ~1-2% off the single-sentence
+    ones and ``ell`` up to ~0.15 nats off, depending on the other sentences in the batch.
+    """
+    n_tokens = np.asarray(n_tokens)
+    order = np.argsort(n_tokens, kind="stable")
+    batches = []
+    for length in np.unique(n_tokens[order]):
+        rows = order[n_tokens[order] == length]
+        batches += [rows[i : i + batch_size] for i in range(0, len(rows), batch_size)]
+    return batches
+
+
 def _decode_span(tokenizer, ids_row, first, last):
     t = len(ids_row)
     a, b = int(_absolute(first, t)), int(_absolute(last, t))
@@ -128,10 +144,11 @@ def _decode_span(tokenizer, ids_row, first, last):
 
 @torch.no_grad()
 def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_every: int = 10):
-    """Run ``meta`` through ``model`` in its own order.
+    """Run ``meta`` through ``model`` in batches of equal token length (no padding,
+    ``length_batches``); outputs are in ``meta``'s row order.
 
     Returns ``acts`` ({position: [N x hidden float32 array per hidden state]}), ``ell`` (N,)
-    and ``checks`` (decode mismatches, padding consistency).
+    and ``checks`` (decode mismatches, batched vs single consistency).
     """
     from rmu.utils import get_decoder_layers
 
@@ -148,11 +165,15 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
     bos_id = tokenizer.bos_token_id
     adds_bos = bos_id is not None and tokenizer("a")["input_ids"][:1] == [bos_id]
 
-    acts = {p: [[] for _ in range(n_states)] for p in POSITIONS}
-    ell, mismatches, examples = [], [], []
     n = len(meta)
-    for start in range(0, n, batch_size):
-        batch = meta.iloc[start : start + batch_size]
+    acts = {p: [np.empty((n, hidden), np.float32) for _ in range(n_states)] for p in POSITIONS}
+    ell = np.full(n, np.nan)
+    mismatches, examples = [], []
+    batches = length_batches(meta["n_tokens"].to_numpy(), batch_size)
+    done = 0
+    for b, rows in enumerate(batches):
+        batch = meta.iloc[rows]
+        start = int(rows[0])
         inputs = _model_inputs(tokenizer, batch["sentence"], device)
         ids, mask = inputs["input_ids"], inputs["attention_mask"]
         ids_cpu = ids.cpu()
@@ -163,7 +184,7 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
             bad = np.flatnonzero(got != want)
             raise AssertionError(
                 f"token counts differ from the meta (tokenizer mismatch?) at rows "
-                f"{(start + bad[:5]).tolist()}: got {got[bad[:5]].tolist()}, "
+                f"{rows[bad[:5]].tolist()}: got {got[bad[:5]].tolist()}, "
                 f"meta {want[bad[:5]].tolist()}"
             )
         if adds_bos:
@@ -196,21 +217,22 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
         for k, h in enumerate(hs):
             for p in POSITIONS:
                 idx = batch[POSITION_COLUMNS[p]].to_numpy()
-                acts[p][k].append(gather_positions(h, idx).float().cpu())
-        ell.append(word_logprob(out.logits, ids, first, last).cpu())
+                acts[p][k][rows] = gather_positions(h, idx).float().cpu().numpy()
+        ell[rows] = word_logprob(out.logits, ids, first, last).cpu().numpy()
 
-        done = min(start + batch_size, n)
-        if (start // batch_size) % log_every == 0 or done == n:
-            print(f"  {done}/{n} sentences", flush=True)
+        done += len(rows)
+        if b % log_every == 0 or done == n:
+            print(f"  {done}/{n} sentences ({len(batches)} batches of equal length)", flush=True)
 
-    acts = {p: [torch.cat(a).numpy() for a in acts[p]] for p in POSITIONS}
+    if np.isnan(ell).any():
+        raise AssertionError("some rows were never extracted")
     for p in POSITIONS:
         for k, a in enumerate(acts[p]):
             if a.shape != (n, hidden):
                 raise AssertionError(f"{p} layer {k}: shape {a.shape}, expected {(n, hidden)}")
             if not np.isfinite(a).all():
                 raise AssertionError(f"{p} layer {k}: non-finite activations")
-    ell = torch.cat(ell).numpy().astype(np.float64)
+    ell = ell.astype(np.float64)
     checks = {
         "decode_mismatches": mismatches,
         "examples": examples,
@@ -221,10 +243,9 @@ def extract(model, tokenizer, meta: pd.DataFrame, batch_size: int = 32, log_ever
 
 @torch.no_grad()
 def padding_check(model, tokenizer, meta, acts, n_rows: int = 4):
-    """Max relative difference between batched and one-at-a-time activations (first rows).
-
-    The rows chosen are the shortest of the first batch, i.e. the most-padded ones.
-    """
+    """Max relative difference between batched and one-at-a-time activations, for the
+    shortest of the first 32 rows. Batches have equal lengths (no padding), so this should be
+    ~0; it was the padding check while batches were left-padded (Qwen3: 1.3e-2)."""
     device = model.get_input_embeddings().weight.device
     n_tok = meta["n_tokens"].to_numpy()[:32]
     rows = np.argsort(n_tok, kind="stable")[:n_rows]

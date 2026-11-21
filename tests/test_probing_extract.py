@@ -1,6 +1,7 @@
 """Pure functions of probing.extract on small fake tensors (CPU, no model)."""
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
@@ -8,8 +9,10 @@ from probing.extract import (
     FLOAT16_MAX,
     choose_store_dtype,
     gather_positions,
+    length_batches,
     word_logprob,
 )
+from probing.io import POSITION_COLUMNS, POSITIONS
 
 PAD = 0
 
@@ -129,3 +132,106 @@ def test_store_dtype_falls_back_to_float32_only_on_overflow():
     assert choose_store_dtype("float32", ok) == "float32"
     with pytest.raises(ValueError, match="overflows float16"):
         choose_store_dtype("float16", big)
+
+
+def test_length_batches_never_mix_lengths_and_cover_every_row_once():
+    n_tokens = np.array([9, 7, 9, 12, 7, 9, 9, 7, 12, 9])
+    batches = length_batches(n_tokens, batch_size=3)
+
+    rows = np.concatenate(batches)
+    assert sorted(rows.tolist()) == list(range(len(n_tokens)))
+    assert all(len(set(n_tokens[b])) == 1 and len(b) <= 3 for b in batches)
+    assert [len(b) for b in batches] == [3, 3, 2, 2]  # 7 x3; 9 x5 -> 3 + 2; 12 x2
+    assert batches[1].tolist() == [0, 2, 5]  # meta order within a length
+
+
+class _StubTokenizer:
+    """Whitespace tokenizer with BOS = 1 and left padding with 0 (enough for extract)."""
+
+    bos_token_id = 1
+
+    def __init__(self, sentences):
+        words = sorted({w for s in sentences for w in s.split()})
+        self.ids = {w: i + 2 for i, w in enumerate(words)}
+        self.words = {i: w for w, i in self.ids.items()} | {1: "<s>", 0: "<pad>"}
+
+    def __call__(self, text, padding=False, return_tensors=None):
+        if isinstance(text, str):
+            return {"input_ids": [1] + [self.ids.get(w, 2) for w in text.split()]}
+        seqs = [[1] + [self.ids[w] for w in s.split()] for s in text]
+        width = max(map(len, seqs))
+        ids = torch.tensor([[0] * (width - len(q)) + q for q in seqs])
+        mask = torch.tensor([[0] * (width - len(q)) + [1] * len(q) for q in seqs])
+        return {"input_ids": ids, "attention_mask": mask}
+
+    def decode(self, ids, skip_special_tokens=False):
+        return " ".join(self.words[int(i)] for i in ids)
+
+    def convert_ids_to_tokens(self, ids):
+        return [self.words[int(i)] for i in ids] if isinstance(ids, list) else self.words[ids]
+
+
+class _StubModel(torch.nn.Module):
+    """hidden_states[k] = embedding + k * (position + 1) * (number of padded tokens + 1): any
+    padding, a lost position or a row written to the wrong place changes the result."""
+
+    def __init__(self, vocab, hidden=4, n_layers=2):
+        super().__init__()
+        self.embed = torch.nn.Embedding(vocab, hidden)
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList(torch.nn.Identity() for _ in range(n_layers))
+        self.config = type("C", (), {"get_text_config": lambda self: self})()
+        self.config.hidden_size = hidden
+
+    def get_input_embeddings(self):
+        return self.embed
+
+    def forward(self, input_ids, attention_mask, position_ids, output_hidden_states=True):
+        pads = (attention_mask == 0).sum(1, keepdim=True)[..., None].float()
+        e = self.embed(input_ids)
+        pos = position_ids[..., None].float()
+        hs = [e + k * (pos + 1) * (pads + 1) for k in range(len(self.model.layers) + 1)]
+        logits = hs[-1] @ self.embed.weight.T
+        return type("Out", (), {"hidden_states": tuple(hs), "logits": logits})()
+
+
+def test_extract_in_equal_length_batches_matches_single_sentences_row_by_row():
+    from probing.extract import _model_inputs, extract
+
+    sentences = [
+        "the caring mother",
+        "the uncaring mother",
+        "a very strong man indeed",
+        "a very weak man indeed",
+        "she bakes",
+        "he bakes",
+        "the nurse was kind",
+        "the nurse was rude",
+    ]
+    tok = _StubTokenizer(sentences)
+    torch.manual_seed(0)
+    model = _StubModel(vocab=len(tok.ids) + 2)
+    n = np.array([len(s.split()) + 1 for s in sentences])
+    meta = pd.DataFrame(
+        {
+            "row": range(len(sentences)),
+            "sentence": sentences,
+            "word": [s.split()[-2] if len(s.split()) > 2 else s.split()[-1] for s in sentences],
+            "n_tokens": n,
+            "idx_first_diff": [-2 if len(s.split()) > 2 else -1 for s in sentences],
+            "idx_last_subtok": [-2 if len(s.split()) > 2 else -1 for s in sentences],
+        }
+    )
+
+    acts, ell, checks = extract(model, tok, meta, batch_size=1 + 2)  # mixed lengths, small
+
+    assert checks["decode_mismatches"] == [] and checks["padding_max_rel_diff"] == 0.0
+    for r, s in enumerate(sentences):
+        single = model(**_model_inputs(tok, [s], "cpu")).hidden_states
+        for p in POSITIONS:
+            idx = [int(meta.loc[r, POSITION_COLUMNS[p]])]
+            for k, h in enumerate(single):
+                np.testing.assert_array_equal(
+                    acts[p][k][r], gather_positions(h, idx)[0].detach().numpy()
+                )
+    assert np.isfinite(ell).all() and ell.shape == (len(sentences),)
