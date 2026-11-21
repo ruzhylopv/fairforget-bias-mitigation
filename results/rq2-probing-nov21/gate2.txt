@@ -1,0 +1,21 @@
+[ ] FAIL null within 0.50 +- 0.03 (5 seeds)
+      acc: range 0.478-0.531, worst 0.531 (seed 0, first_diff 20), 1/490 runs outside the band, largest |mean over seeds - 0.5| 0.012; acc_pair: range 0.458-0.545, worst 0.545 (seed 4, first_diff 7), 17/490 runs outside the band, largest |mean over seeds - 0.5| 0.015; chance SD: acc 0.011, pair 0.016
+[x] every outer fold 50/50; no target in train and test
+      S=1/S=0 per fold [(206, 206), (205, 205), (205, 205), (204, 204), (205, 205)]; targets in >1 fold: 0; tests/test_probing_probe.py::test_outer_folds_never_share_a_target_and_keep_pairs_together
+[?] groups reach the inner CV
+      unit test tests/test_probing_probe.py::test_fit_layer_passes_training_groups_to_the_inner_cv (inner GroupKFold(4))
+[x] probe and baseline scored on the same folds.csv
+      99 prediction files, fold columns equal folds.csv: True; max |score from preds - summary.csv| = 0.0e+00
+[x] chosen C not at a grid edge, or explained
+      layers [0, 1, 2, 3, 4, 5, 6, 7] with grid 1e-06,1e-05,0.0001,0.001: max change acc 0.000, pair 0.000; still at the bottom: none
+
+acc_pair: baseline_ell 0.697 [0.666, 0.725]; without misspellings 0.696 (-0.0009)
+  peak first_diff layer 18: 0.848 [0.821, 0.873], gap vs ell +0.151 [+0.117, +0.187], p 0.167, p_corr 0.167 (B 5); without misspellings 0.848 (+0.0005)
+    null range over all layers and seeds: 0.471-0.545
+  peak last_subtok layer 22: 0.867 [0.840, 0.893], gap vs ell +0.171 [+0.136, +0.206], p 0.167, p_corr 0.167 (B 5); without misspellings 0.867 (-0.0004)
+    null range over all layers and seeds: 0.458-0.540
+acc: baseline_ell 0.608 [0.587, 0.629]; without misspellings 0.608 (-0.0002)
+  peak first_diff layer 21: 0.779 [0.753, 0.802], gap vs ell +0.170 [+0.141, +0.200], p 0.167, p_corr 0.167 (B 5); without misspellings 0.779 (+0.0003)
+    null range over all layers and seeds: 0.480-0.531
+  peak last_subtok layer 20: 0.798 [0.776, 0.821], gap vs ell +0.190 [+0.163, +0.218], p 0.167, p_corr 0.167 (B 5); without misspellings 0.798 (+0.0004)
+    null range over all layers and seeds: 0.478-0.528

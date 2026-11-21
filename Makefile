@@ -78,10 +78,16 @@ jobs:
 watch:
 	@test -n "$(JOB)" || { echo "usage: make watch JOB=<job id> [LOSSES=1]"; exit 1; }
 	@# Wait while the job is queued or starting up; give up only if it left the queue without a log.
+	@# While pending, show Slurm's reason and its estimated start (%S; N/A until the scheduler
+	@# has planned the job, and it can move as other jobs finish early or arrive).
 	@while ! log=$$(ls /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs/*-$(JOB).out 2>/dev/null); do \
-		state=$$(squeue -h -j $(JOB) -o %T 2>/dev/null); \
-		[ -n "$$state" ] || { echo; echo "Job $(JOB) is not in the queue and has no log. Check: make jobs"; exit 1; }; \
-		printf '\rWaiting for the log of job %s (%s)... ' "$(JOB)" "$$state"; \
+		info=$$(squeue -h -j $(JOB) -o '%T %S %r' 2>/dev/null); \
+		[ -n "$$info" ] || { echo; echo "Job $(JOB) is not in the queue and has no log. Check: make jobs"; exit 1; }; \
+		set -- $$info; state=$$1; start=$$2; reason=$$3; \
+		if [ "$$state" != PENDING ]; then when="started $$(echo $$start | tr T ' ')"; \
+		elif [ -z "$$start" ] || [ "$$start" = N/A ]; then when="no start estimate yet"; \
+		else when="estimated start $$(echo $$start | tr T ' ')"; fi; \
+		printf '\r%-100s' "Waiting for job $(JOB): $$state ($$reason), $$when, now $$(date +%H:%M:%S)"; \
 		sleep 10; \
 	done; \
 	echo; echo "== $$log"; \
