@@ -238,3 +238,6 @@ __marimo__/
 CLAUDE.md
 
 .DS_Store
+# Per-sentence token positions of the tokenization check (large, not used by the pipeline:
+# pairs.csv holds what probing.meta reads). Kept on the cluster only.
+results/tokenization-check-nov17/positions/
