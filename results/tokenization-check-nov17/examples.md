@@ -155,3 +155,59 @@
 | bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
 |---|---|---|---|---|---|
 | race | rome | mexico | `rome` | `Ġmexico` | before_word / word_start |
+
+## llama31-8b-instruct
+
+### stereo multi-token (1685 / 8498 pairs)
+
+| bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
+|---|---|---|---|---|---|
+| profession | nerdy | lazy | `Ġner|dy` | `Ġlazy` | word_start / word_start |
+| race | drunks | athletic | `Ġdr|unks` | `Ġathletic` | word_start / word_start |
+| gender | ceo | homemaker | `Ġce|o` | `Ġhom|emaker` | word_start / word_start |
+| religion | intolerant | tolerant | `Ġintoler|ant` | `Ġtolerant` | word_start / word_start |
+| profession | stingy | generous | `Ġsting|y` | `Ġgenerous` | word_start / word_start |
+
+### anti multi-token (1478 / 8498 pairs)
+
+| bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
+|---|---|---|---|---|---|
+| race | dishonest | chivalrous | `Ġdishonest` | `Ġch|ival|rous` | word_start / word_start |
+| profession | romantic | illiterate | `Ġromantic` | `Ġill|iterate` | word_start / word_start |
+| gender | ceo | homemaker | `Ġce|o` | `Ġhom|emaker` | word_start / word_start |
+| religion | terrorism | peacefulness | `Ġterrorism` | `Ġpeaceful|ness` | word_start / word_start |
+| race | smelly | fragrant | `Ġsm|elly` | `Ġfrag|rant` | word_start / word_start |
+
+### stereo fewer tokens than anti (1172 / 8498 pairs)
+
+| bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
+|---|---|---|---|---|---|
+| race | dishonest | chivalrous | `Ġdishonest` | `Ġch|ival|rous` | word_start / word_start |
+| profession | romantic | illiterate | `Ġromantic` | `Ġill|iterate` | word_start / word_start |
+| gender | social | antisocial | `Ġsocial` | `Ġantis|ocial` | word_start / word_start |
+| religion | terrorism | peacefulness | `Ġterrorism` | `Ġpeaceful|ness` | word_start / word_start |
+| race | terrorists | pacifists | `Ġterrorists` | `Ġpac|if|ists` | word_start / word_start |
+
+### stereo more tokens than anti (1338 / 8498 pairs)
+
+| bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
+|---|---|---|---|---|---|
+| profession | nerdy | lazy | `Ġner|dy` | `Ġlazy` | word_start / word_start |
+| race | drunks | athletic | `Ġdr|unks` | `Ġathletic` | word_start / word_start |
+| gender | macho | delicate | `Ġmach|o` | `Ġdelicate` | word_start / word_start |
+| religion | intolerant | tolerant | `Ġintoler|ant` | `Ġtolerant` | word_start / word_start |
+| profession | stingy | generous | `Ġsting|y` | `Ġgenerous` | word_start / word_start |
+
+### first difference mid-word (3 / 8498 pairs)
+
+| bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
+|---|---|---|---|---|---|
+| race | iraq | iran | `Ġir|aq` | `Ġir|an` | mid_word / mid_word |
+| profession | arent | are | `Ġare|nt` | `Ġare` | mid_word / after_word |
+| race | oman | omani | `Ġo|man` | `Ġo|mani` | mid_word / mid_word |
+
+### first difference outside the word (1 / 8498 pairs)
+
+| bias | stereo | anti | stereo tokens | anti tokens | first diff (st/an) |
+|---|---|---|---|---|---|
+| race | rome | mexico | `rome` | `Ġmexico` | before_word / word_start |

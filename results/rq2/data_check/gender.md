@@ -7,6 +7,7 @@ targets with < 10 items: 0
 
 - gemma3-12b-it: 1026 pairs (0 dropped, word first without BOS; 0 dropped, first difference outside the word); target after the word 19.4% of pairs; multi-token words 12.4% of sentences; no final punctuation 14.8%
 - lapa-12b-instruct: 1026 pairs (0 dropped, word first without BOS; 0 dropped, first difference outside the word); target after the word 19.4% of pairs; multi-token words 12.4% of sentences; no final punctuation 14.8%
+- llama31-8b-instruct: 1026 pairs (0 dropped, word first without BOS; 0 dropped, first difference outside the word); target after the word 19.4% of pairs; multi-token words 17.4% of sentences; no final punctuation 14.8%
 - qwen3-8b: 1021 pairs (5 dropped, word first without BOS; 0 dropped, first difference outside the word); target after the word 19.0% of pairs; multi-token words 17.3% of sentences; no final punctuation 14.8%
 
 ## Flagged pairs (19)

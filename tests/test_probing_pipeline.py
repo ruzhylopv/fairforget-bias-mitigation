@@ -31,9 +31,7 @@ def fake_run(root, layers="0-2"):
 
 def test_check_inputs_stops_for_models_without_pairs_and_bias_without_config(tmp_path):
     with pytest.raises(pipeline.Stop, match=r"not in .*pairs.csv.*card \[7\]"):
-        pipeline.check_inputs(
-            "llama31-8b-instruct", "gender", io.run_paths("x", "gender", tmp_path)
-        )
+        pipeline.check_inputs("mamay-12b-it", "gender", io.run_paths("x", "gender", tmp_path))
     with pytest.raises(pipeline.Stop, match=r"religion.yaml is missing.*card \[6\]"):
         pipeline.check_inputs(
             "qwen3-8b", "religion", io.run_paths("qwen3-8b", "religion", tmp_path)

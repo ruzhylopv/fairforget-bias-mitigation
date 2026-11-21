@@ -15,11 +15,37 @@
   "qwen3-8b": {
    "source": "Qwen/Qwen3-8B",
    "class": "Qwen2Tokenizer"
+  },
+  "llama31-8b-instruct": {
+   "source": "/e/project1/e-dev-2026d09-075/fairforget/models/Llama-3.1-8B-Instruct/0e9e39f249a16976918f6564b8830bc894c89659",
+   "class": "TokenizersBackend"
   }
  },
  "n_pairs": 8498,
  "files": [
   "/home/taras/code/ai/proj/fairforget-bias-mitigation/data/stereoset/raw/test.json",
   "/home/taras/code/ai/proj/fairforget-bias-mitigation/data/stereoset/raw/dev.json"
+ ],
+ "merged": [
+  {
+   "argv": [
+    "scripts/tokenization_check.py",
+    "--models",
+    "llama31-8b-instruct",
+    "--merge"
+   ],
+   "transformers": "5.19.0",
+   "tokenizers": {
+    "llama31-8b-instruct": {
+     "source": "/e/project1/e-dev-2026d09-075/fairforget/models/Llama-3.1-8B-Instruct/0e9e39f249a16976918f6564b8830bc894c89659",
+     "class": "TokenizersBackend"
+    }
+   },
+   "n_pairs": 8498,
+   "files": [
+    "/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/bias-mitigation-ruzhylo1/data/stereoset/raw/test.json",
+    "/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/bias-mitigation-ruzhylo1/data/stereoset/raw/dev.json"
+   ]
+  }
  ]
 }
