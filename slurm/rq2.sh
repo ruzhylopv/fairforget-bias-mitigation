@@ -26,15 +26,15 @@ if [[ $# -lt 2 ]]; then
 fi
 MODEL=$1
 BIAS=$2
-STAGE=${3:-all}
-case $STAGE in all | quick | null) ;; *) echo "stage must be all, quick or null" >&2; exit 1 ;; esac
+RQ2_STAGE=${3:-all}  # not STAGE: `module load Stages/...` (env.sh) exports STAGE=2026
+case $RQ2_STAGE in all | quick | null) ;; *) echo "stage must be all, quick or null" >&2; exit 1 ;; esac
 
 REPO_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_DIR"
 source slurm/env.sh
 
 # The stage that runs first decides what can be checked now (gate 2 does not exist before A).
-first=$([[ $STAGE == null ]] && echo null || echo quick)
+first=$([[ $RQ2_STAGE == null ]] && echo null || echo quick)
 python -m probing.pipeline --model "$MODEL" --bias "$BIAS" --stage "$first" --dry_run
 [[ -n ${DRY_RUN:-} ]] && exit 0
 
@@ -48,11 +48,11 @@ submit() {  # submit <purpose> <time> <name> <dependency> <stage>; prints the jo
 }
 
 dep=${JOB_DEPENDENCY:-}
-if [[ $STAGE != null ]]; then
+if [[ $RQ2_STAGE != null ]]; then
     a=$(submit "rq2 quick: $MODEL / $BIAS" "${QUICK_TIME:-02:00:00}" rq2-quick "$dep" quick)
     dep=afterok:$a
 fi
-if [[ $STAGE != quick ]]; then
+if [[ $RQ2_STAGE != quick ]]; then
     for ((i = 1; i <= ${NULL_PIECES:-1}; i++)); do
         b=$(submit "rq2 null ($i/${NULL_PIECES:-1}): $MODEL / $BIAS" "${NULL_TIME:-12:00:00}" \
             rq2-null "$dep" null)
