@@ -290,9 +290,9 @@
       }
     },
     "controls stats": {
-      "date": "2026-11-21T19:09:53",
-      "git_commit": "bbf2072fff92e0cd1c71fe6dee4224a2ba7c5eac",
-      "slurm_job_id": "3046393",
+      "date": "2026-11-21T20:43:17",
+      "git_commit": "1a651ae727b0ace05f78b1b28a14e35ec714884c",
+      "slurm_job_id": "3047288",
       "positions": [
         "first_diff",
         "last_subtok"
@@ -348,13 +348,29 @@
         47,
         48
       ],
+      "n_pairs": 1025,
+      "n_targets": 40,
       "n_boot": 2000,
       "boot_seed": 0,
       "null_seeds_B": 100,
       "misspelled": [
+        "acquiscent",
+        "boarish",
+        "compasionate",
+        "deliquent",
+        "empatheticness",
+        "forebearance",
+        "igorant",
+        "innnocent",
         "mainicure",
+        "mannerable",
+        "mischevious",
+        "posessive",
+        "stoudious",
+        "stubborness",
+        "toublemaker",
         "uncertanties",
-        "forebearance"
+        "unformal"
       ],
       "n_layers": 48,
       "fixed_depth": {
@@ -372,13 +388,13 @@
       }
     },
     "pipeline quick": {
-      "date": "2026-11-21T19:01:38",
-      "git_commit": "bbf2072fff92e0cd1c71fe6dee4224a2ba7c5eac",
-      "slurm_job_id": "3046392",
+      "date": "2026-11-21T20:43:17",
+      "git_commit": "1a651ae727b0ace05f78b1b28a14e35ec714884c",
+      "slurm_job_id": "3047288",
       "steps": {
         "meta": "skipped: meta.csv exists",
         "extract": "skipped: 98 layer files (49 hidden states), ell filled",
-        "gate 1": "skipped: all PASS in acts/check_extraction.json (gate1.txt written from it)",
+        "gate 1": "skipped: gate1.txt all PASS",
         "probe": "skipped: 98 probes and the ell baseline, summary.csv",
         "null (quick)": "skipped: seeds 0-4 complete for all 98 probes",
         "cgrid": "skipped: all 16 probes with C at the low edge refitted",

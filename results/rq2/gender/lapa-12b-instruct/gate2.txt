@@ -12,17 +12,17 @@
 fixed depth 0.417 = layer 20 of 48, last_subtok (CHOSEN ON THIS RUN: not an independent test)
   acc_pair: 0.845 [0.820, 0.869], gap vs ell +0.148 [+0.115, +0.182], gap vs layer 0 +0.229 [+0.177, +0.281], p 0.010 (B 100)
   acc: 0.798 [0.776, 0.821], gap vs ell +0.190 [+0.163, +0.218], gap vs layer 0 +0.185 [+0.152, +0.220], p 0.010 (B 100)
-acc_pair: baseline_ell 0.697 [0.666, 0.725]; without misspellings 0.696 (-0.0009)
+acc_pair: baseline_ell 0.697 [0.666, 0.725]; without misspellings 0.698 (+0.0015)
   first_diff layer 0 (lexical): 0.640 [0.596, 0.687]
-  peak first_diff layer 18: 0.848 [0.821, 0.873], gap vs ell +0.151 [+0.117, +0.187], gap vs layer 0 +0.208 [+0.165, +0.251], p 0.010, p_corr 0.010 (B 100); without misspellings 0.848 (+0.0005)
+  peak first_diff layer 18: 0.848 [0.821, 0.873], gap vs ell +0.151 [+0.117, +0.187], gap vs layer 0 +0.208 [+0.165, +0.251], p 0.010, p_corr 0.010 (B 100); without misspellings 0.848 (+0.0003)
     null range over all layers and seeds: 0.427-0.576
   last_subtok layer 0 (lexical): 0.616 [0.561, 0.672]
-  peak last_subtok layer 22: 0.867 [0.840, 0.893], gap vs ell +0.171 [+0.136, +0.206], gap vs layer 0 +0.252 [+0.196, +0.307], p 0.010, p_corr 0.010 (B 100); without misspellings 0.867 (-0.0004)
+  peak last_subtok layer 22: 0.867 [0.840, 0.893], gap vs ell +0.171 [+0.136, +0.206], gap vs layer 0 +0.252 [+0.196, +0.307], p 0.010, p_corr 0.010 (B 100); without misspellings 0.865 (-0.0024)
     null range over all layers and seeds: 0.427-0.576
-acc: baseline_ell 0.608 [0.587, 0.629]; without misspellings 0.608 (-0.0002)
+acc: baseline_ell 0.608 [0.587, 0.629]; without misspellings 0.609 (+0.0009)
   first_diff layer 0 (lexical): 0.624 [0.591, 0.660]
-  peak first_diff layer 21: 0.779 [0.753, 0.802], gap vs ell +0.170 [+0.141, +0.200], gap vs layer 0 +0.155 [+0.120, +0.189], p 0.010, p_corr 0.010 (B 100); without misspellings 0.779 (+0.0003)
+  peak first_diff layer 21: 0.779 [0.753, 0.802], gap vs ell +0.170 [+0.141, +0.200], gap vs layer 0 +0.155 [+0.120, +0.189], p 0.010, p_corr 0.010 (B 100); without misspellings 0.781 (+0.0025)
     null range over all layers and seeds: 0.448-0.551
   last_subtok layer 0 (lexical): 0.613 [0.577, 0.649]
-  peak last_subtok layer 20: 0.798 [0.776, 0.821], gap vs ell +0.190 [+0.163, +0.218], gap vs layer 0 +0.185 [+0.152, +0.220], p 0.010, p_corr 0.010 (B 100); without misspellings 0.798 (+0.0004)
+  peak last_subtok layer 20: 0.798 [0.776, 0.821], gap vs ell +0.190 [+0.163, +0.218], gap vs layer 0 +0.185 [+0.152, +0.220], p 0.010, p_corr 0.010 (B 100); without misspellings 0.797 (-0.0011)
     null range over all layers and seeds: 0.449-0.558
