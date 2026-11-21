@@ -53,6 +53,13 @@ N_OUTER, N_INNER = 5, 4
 # Inner selection by held-out log-loss: smoother than accuracy on small inner folds.
 INNER_SCORING = "neg_log_loss"
 SUBSETS = {"": None, "_tfirst": False, "_tafter": True}  # target_after_word at pair level
+THREAD_VARS = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "FLEXIBLAS_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+)
 
 
 # --------------------------------------------------------------------------- building blocks
@@ -180,20 +187,18 @@ def most_frequent(values):
 
 
 def run_layer(model, position, k, root, out_dir, meta_cols, folds, grid):
-    """Fit, score and save one (position, layer). Runs in a joblib worker."""
-    from threadpoolctl import threadpool_limits
-
+    """Fit, score and save one (position, layer). Runs in a joblib worker (one BLAS thread,
+    set through the environment in ``main``)."""
     t0 = time.time()
     y, groups, flag = meta_cols["S"], meta_cols["target"], meta_cols["flag"]
-    with threadpool_limits(limits=1):
-        X = np.asarray(load_layer(model, position, k, root=root), dtype=np.float64)
-        if X.shape[0] != len(y):
-            raise ValueError(f"{position} layer {k}: {X.shape[0]} rows, meta has {len(y)}")
-        res = fit_layer(X, y, groups, folds, grid)
-        C_all = most_frequent(list(res["C"].values()))
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", ConvergenceWarning)
-            full = make_pipe(C_all).fit(X, y)
+    X = np.asarray(load_layer(model, position, k, root=root), dtype=np.float64)
+    if X.shape[0] != len(y):
+        raise ValueError(f"{position} layer {k}: {X.shape[0]} rows, meta has {len(y)}")
+    res = fit_layer(X, y, groups, folds, grid)
+    C_all = most_frequent(list(res["C"].values()))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        full = make_pipe(C_all).fit(X, y)
     w_raw, b_raw = unscale(full)
     scaler = full.named_steps["standardscaler"]
 
@@ -286,7 +291,7 @@ def main(argv=None):
     ap.add_argument("--n_jobs", type=int, default=-1, help="parallel (position, layer) fits")
     args = ap.parse_args(argv)
 
-    from joblib import Parallel, delayed
+    from joblib import Parallel, delayed, parallel_config
 
     t0 = time.time()
     root = Path(args.root) if args.root else rq2_root()
@@ -340,9 +345,14 @@ def main(argv=None):
     # Probes, (position, layer) in parallel with one BLAS thread each.
     tasks = [(p, k) for p in positions for k in layers]
     n_jobs = min(len(tasks), usable_cpus()) if args.n_jobs == -1 else args.n_jobs
-    rows = Parallel(n_jobs=n_jobs, verbose=0)(
-        delayed(run_layer)(args.model, p, k, root, out_dir, cols, folds, grid) for p, k in tasks
-    )
+    # One BLAS thread per worker, via the environment the workers start with (calling into the
+    # BLAS library at runtime, as threadpoolctl does, makes JUPITER's FlexiBLAS print "BLAS").
+    for var in THREAD_VARS:
+        os.environ[var] = "1"
+    with parallel_config(backend="loky", inner_max_num_threads=1):
+        rows = Parallel(n_jobs=n_jobs, verbose=0)(
+            delayed(run_layer)(args.model, p, k, root, out_dir, cols, folds, grid) for p, k in tasks
+        )
 
     summary = pd.DataFrame([base_row, *rows])
     summary_path.parent.mkdir(parents=True, exist_ok=True)
