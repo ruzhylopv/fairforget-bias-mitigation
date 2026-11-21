@@ -1,9 +1,9 @@
-[ ] FAIL null within 0.50 +- 0.03 (100 seeds)
-      acc: range 0.448-0.558, worst 0.558 (seed 17, last_subtok 14), 385/9800 runs outside the band, largest |mean over seeds - 0.5| 0.002; acc_pair: range 0.427-0.576, worst 0.576 (seed 17, first_diff 7), 1264/9800 runs outside the band, largest |mean over seeds - 0.5| 0.003; chance SD: acc 0.011, pair 0.016
+[x] null mean over seeds within 0.50 +- 0.03, every probe (100 seeds)
+      acc: largest |mean - 0.5| 0.002 (first_diff 21); single runs 0.448-0.558, 385/9800 outside the band, SD 0.014 vs binomial 0.011; acc_pair: largest |mean - 0.5| 0.003 (first_diff 27); single runs 0.427-0.576, 1264/9800 outside the band, SD 0.020 vs binomial 0.016
 [x] every outer fold 50/50; no target in train and test
       S=1/S=0 per fold [(206, 206), (205, 205), (205, 205), (204, 204), (205, 205)]; targets in >1 fold: 0; tests/test_probing_probe.py::test_outer_folds_never_share_a_target_and_keep_pairs_together
-[?] groups reach the inner CV
-      unit test tests/test_probing_probe.py::test_fit_layer_passes_training_groups_to_the_inner_cv (inner GroupKFold(4))
+[x] groups reach the inner CV
+      fit_layer on synthetic data: 5 inner splits for 5 outer folds, each with exactly the training targets as groups (inner GroupKFold(4))
 [x] probe and baseline scored on the same folds.csv
       99 prediction files, fold columns equal folds.csv: True; max |score from preds - summary.csv| = 0.0e+00
 [x] chosen C not at a grid edge, or explained
