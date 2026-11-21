@@ -99,7 +99,10 @@ misspelled pair, see `config/rq2/gender.yaml`). Code: `src/probing/`. Every step
    - `robustness_no_misspellings.csv`: the summary without the pairs whose word is listed
      under `misspelled` in `config/rq2/{bias}.yaml` (gender: `mainicure`, `uncertanties`,
      `forebearance`), from the stored predictions (no refit).
-   - `gate2.txt`: the checklist as far as it can be computed (null band, fold balance, folds
+   - `gate2.txt`: the checklist as far as it can be computed (null: every probe's mean over
+     seeds within 0.50 ± 0.03, since a leak shifts the mean; single runs may leave the band,
+     their spread is ~1.3× binomial for lapa/gender because folds are grouped by target; fold
+     balance, folds
      shared by probe and baseline and reproducing `summary.csv`, C grid), then the probe at
      the **fixed depth** and the peak layer.
    - **Fixed depth** (`config/rq2/report.yaml`): chosen once, 2026-11-21, on lapa/gender

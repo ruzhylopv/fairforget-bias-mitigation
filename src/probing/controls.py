@@ -79,7 +79,7 @@ BASELINE = ("baseline_ell", -1)
 LEXICAL_LAYER = 0  # lexical baseline: the probe on the token embedding (hidden_states[0])
 ACC_METRICS = tuple(f"{m}{s}" for s in SUBSETS for m in ("acc", "acc_pair"))
 CI_METRICS = tuple(f"{m}{s}" for s in SUBSETS for m in ("acc", "acc_pair", "logloss"))
-NULL_BAND = 0.03  # gate 2: shuffled-label accuracy within 0.50 +- 3 points
+NULL_BAND = 0.03  # gate 2: mean shuffled-label accuracy within 0.50 +- 3 points
 N_BOOT = 2000
 
 
@@ -530,39 +530,42 @@ def load_preds(out_dir, keys) -> dict:
 # --------------------------------------------------------------------------- gate 2
 
 
+def null_check(null, n_rows, band=NULL_BAND) -> tuple:
+    """Gate 2 item: the shuffled-label null sits at chance.
+
+    Judged per probe on the **mean over seeds** of acc and acc_pair: a leak (labels reaching
+    the test fold) shifts that mean, while single runs scatter around it. Single runs are
+    not required to stay in the band: with many seeds and probes some always leave it, and
+    with folds grouped by target their spread is wider than the binomial one (both are
+    reported, as information).
+    """
+    name = f"null mean over seeds within 0.50 +- {band:g}, every probe"
+    if null is None or null.empty:
+        return (name, None, "no null_scores.csv yet")
+    probes = null[null["position"] != BASELINE[0]]
+    n_seeds = probes["seed"].nunique()
+    chance_sd = {"acc": np.sqrt(0.25 / n_rows), "acc_pair": np.sqrt(0.25 / (n_rows // 2))}
+    ok, parts = True, []
+    for m in ("acc", "acc_pair"):
+        means = probes.groupby(["position", "layer"])[m].mean()
+        dev = (means - 0.5).abs()
+        worst = dev.idxmax()
+        ok &= bool((dev <= band).all())
+        runs_out = int(((probes[m] - 0.5).abs() > band).sum())
+        parts.append(
+            f"{m}: largest |mean - 0.5| {dev.max():.3f} ({worst[0]} {worst[1]}); single runs "
+            f"{probes[m].min():.3f}-{probes[m].max():.3f}, {runs_out}/{len(probes)} outside the "
+            f"band, SD {probes[m].std():.3f} vs binomial {chance_sd[m]:.3f}"
+        )
+    return (f"{name} ({n_seeds} seeds)", ok, "; ".join(parts))
+
+
 def gate_checks(ctx, summary, preds, null=None, cgrid=None) -> list:
     """[(item, ok or None, detail)] for gate 2. ok None = not run yet / judged by hand."""
     y, folds, groups = ctx["y"], ctx["folds"], ctx["groups"]
     items = []
 
-    # Null within 0.50 +- 3 points (acc, acc_pair; every probe, both positions).
-    if null is None or null.empty:
-        items.append(("null within 0.50 +- 0.03", None, "no null_scores.csv yet"))
-    else:
-        probes = null[null["position"] != BASELINE[0]]
-        worst = []
-        for m in ("acc", "acc_pair"):
-            dev = (probes[m] - 0.5).abs()
-            i = dev.idxmax()
-            mean_dev = (probes.groupby(["position", "layer"])[m].mean() - 0.5).abs()
-            worst.append(
-                f"{m}: range {probes[m].min():.3f}-{probes[m].max():.3f}, worst "
-                f"{probes.loc[i, m]:.3f} (seed {probes.loc[i, 'seed']}, "
-                f"{probes.loc[i, 'position']} {probes.loc[i, 'layer']}), "
-                f"{int((dev > NULL_BAND).sum())}/{len(dev)} runs outside the band, "
-                f"largest |mean over seeds - 0.5| {mean_dev.max():.3f}"
-            )
-        ok = bool(((probes[["acc", "acc_pair"]] - 0.5).abs() <= NULL_BAND).all().all())
-        n_pairs = len(y) // 2
-        sd = f"chance SD: acc {np.sqrt(0.25 / len(y)):.3f}, pair {np.sqrt(0.25 / n_pairs):.3f}"
-        seeds = sorted(null["seed"].unique())
-        items.append(
-            (
-                f"null within 0.50 +- 0.03 ({len(seeds)} seeds)",
-                ok,
-                "; ".join(worst) + f"; {sd}",
-            )
-        )
+    items.append(null_check(null, len(y)))
 
     # Folds: 50/50 by label, no target in two folds, saved folds = a fresh outer_folds.
     bal = [

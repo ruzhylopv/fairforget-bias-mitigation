@@ -225,3 +225,29 @@ def test_fixed_depth_report_marks_the_run_it_was_chosen_on(tmp_path):
     assert "layer 3 of 8" in own[0] and "CHOSEN ON THIS RUN" in own[0]
     assert "CHOSEN" not in other[0] and "fixed 2026-11-21 on m/gender" in other[0]
     assert own[1].startswith("  acc_pair:") and "gap vs layer 0" in own[1]
+
+
+def test_null_check_judges_the_mean_over_seeds_not_single_runs():
+    rng = np.random.default_rng(0)
+    rows = [
+        {"seed": b, "position": pos, "layer": k, "acc": 0.5 + d, "acc_pair": 0.5 - d}
+        for b in range(100)
+        for pos in ("first_diff", "last_subtok")
+        for k in range(3)
+        for d in [rng.normal(0, 0.02)]  # single runs often leave +-0.03, means do not
+    ]
+    rows += [
+        {"seed": b, "position": controls.BASELINE[0], "layer": -1, "acc": 0.9, "acc_pair": 0.9}
+        for b in range(100)
+    ]  # the baseline is not judged
+    null = pd.DataFrame(rows)
+    name, ok, detail = controls.null_check(null, n_rows=2050)
+    assert ok and "(100 seeds)" in name
+    assert ((null.loc[null["layer"] >= 0, "acc"] - 0.5).abs() > 0.03).any()
+    assert "outside the band" in detail and "vs binomial 0.011" in detail
+
+    leak = null.copy()
+    leak.loc[(leak["position"] == "last_subtok") & (leak["layer"] == 2), "acc"] += 0.05
+    _, ok, detail = controls.null_check(leak, n_rows=2050)
+    assert not ok and "(last_subtok 2)" in detail
+    assert controls.null_check(None, 2050)[1] is None
