@@ -34,6 +34,33 @@ misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probi
 3. **Probes** (CPU): per layer, logistic regression `P(S | a_k)` with outer CV grouped by
    `target` and an inner grouped CV that picks C. References: predictability (logistic
    regression on `ell`), lexical (the same probe at layer 0), null (labels swapped within pairs).
+   `src/probing/probe.py`:
+   ```bash
+   make submit PURPOSE="rq2: probes lapa gender" JOB_CPUS=72 JOB_TIME=01:00:00 \
+     CMD="python -m probing.probe --model lapa-12b-instruct --layers 0-48"
+   ```
+   - Pipeline `StandardScaler + LogisticRegression(max_iter=5000)`; the scaler matters because
+     a few of lapa's dimensions reach ~1e5.
+   - Outer `GroupKFold(5)` by target, saved once as `probes/{model}/folds.csv` and reused by
+     the baseline and WP6. Inner `GridSearchCV` over C in {1e-4 … 1}, `GroupKFold(4)` on the
+     training targets, selected by log-loss. The outer loop is explicit so the groups reach
+     the inner split. Baseline: the same pipeline on `ell` alone, C = 1e4, no inner search.
+   - Scores from the held-out predictions: per-sentence accuracy (z > 0), pairwise accuracy
+     (z of the stereotype row > z of the anti row, ties ½; computed from z, not p, because p
+     saturates) and log-loss, each overall, `_tfirst` (target before the word) and `_tafter`
+     (target after the word in either row of the pair).
+   - `C_edge` in the summary: `low` (flattest probe fits best, normal at chance layers) or
+     `high` (wants less regularisation: widen `--grid` upwards).
+   - Weights for RQ3 (`probe_layer_kk.npz`): refit on all rows with the most frequent C and
+     mapped back to raw activations (`w_raw = w'/s`, `b_raw = b' − Σ w'μ/s`), so
+     `X @ w_raw + b_raw` is the decision function on raw X. The scaled `coef_` is not a
+     direction in activation space.
+   - Outputs: `probes/{model}/{position}/preds_layer_kk.csv` (row, fold, z, p, C),
+     `probe_layer_kk.npz`, `probes/{model}/baseline_ell.csv`, and the committed
+     `results/rq2-probing-<mmmdd>/summary.csv`.
+   - To test on fake data: `scripts/make_fake_acts.py --layers 19-23 --signal 20,21,22
+     --delta 2 --root R` then `python -m probing.probe --model lapa-12b-instruct --layers 19-23
+     --root R --summary R/summary.csv` gives ~0.92 per sentence on 20–22, ~0.50 elsewhere.
 4. **Comparison**: bootstrap CIs over targets, p-values from the null. "Signal beyond
    predictability" = the probe is significantly above both baselines and the null is at ≈50%.
 

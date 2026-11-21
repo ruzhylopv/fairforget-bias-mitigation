@@ -35,11 +35,12 @@ smoke:
 
 # Any command as a GPU job, e.g.
 #   make submit PURPOSE="pilot: RMU on Lapa" CMD="python -m rmu.unlearn --model_name_or_path lapa-12b-instruct"
-# Optional: JOB_TIME=02:00:00 (default 01:00:00)
+# Optional: JOB_TIME=02:00:00 (default 01:00:00), JOB_CPUS=72 (CPU cores for the task;
+# default: Slurm's, possibly 1). The node is billed whole either way.
 submit:
 	@test -n "$(PURPOSE)" -a -n "$(CMD)" || \
-		{ echo 'usage: make submit PURPOSE="..." CMD="python -m ..." [JOB_TIME=hh:mm:ss]'; exit 1; }
-	JOB_TIME=$(or $(JOB_TIME),01:00:00) slurm/submit.sh "$(PURPOSE)" $(CMD)
+		{ echo 'usage: make submit PURPOSE="..." CMD="python -m ..." [JOB_TIME=hh:mm:ss] [JOB_CPUS=n]'; exit 1; }
+	JOB_TIME=$(or $(JOB_TIME),01:00:00) JOB_CPUS=$(JOB_CPUS) slurm/submit.sh "$(PURPOSE)" $(CMD)
 
 # Evaluate a model on the BBQ benchmark (defaults to MODEL=lapa-12b-instruct).
 # Usage:

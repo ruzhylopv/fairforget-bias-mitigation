@@ -7,7 +7,8 @@
 #   slurm/submit.sh "pilot: RMU on Lapa" python -m rmu.unlearn --model_name_or_path lapa-12b-instruct
 #   JOB_TIME=00:20:00 slurm/submit.sh "smoke test" python scripts/smoke_test.py
 #
-# Optional settings: JOB_TIME (default 01:00:00), JOB_NAME (default rmu).
+# Optional settings: JOB_TIME (default 01:00:00), JOB_NAME (default rmu),
+# JOB_CPUS (--cpus-per-task, e.g. 72 for CPU-parallel work such as probing.probe).
 set -eo pipefail
 
 if [[ $# -lt 2 ]]; then
@@ -24,7 +25,7 @@ shift
 
 cd "$REPO_DIR"
 job_id=$(sbatch --parsable --time="${JOB_TIME:-01:00:00}" --job-name="${JOB_NAME:-rmu}" \
-    slurm/run.sbatch "$@")
+    ${JOB_CPUS:+--cpus-per-task="$JOB_CPUS"} slurm/run.sbatch "$@")
 run_dir=$(python -m rmu.config paths.runs_root)/$job_id
 echo "Submitted job $job_id"
 echo "  log:     $TEAM_SCRATCH/logs/${JOB_NAME:-rmu}-$job_id.out"

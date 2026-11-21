@@ -35,4 +35,8 @@ usage_log_start "$*"
     echo "repo:     $REPO_DIR"
 } | tee "$RUN_DIR/job.txt"
 
+# srun does not inherit --cpus-per-task from sbatch (Slurm >= 22.05).
+if [[ -n "${SLURM_CPUS_PER_TASK:-}" ]]; then
+    export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
+fi
 srun "$@"

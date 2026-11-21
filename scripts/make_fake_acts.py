@@ -14,6 +14,7 @@ Usage:
     uv run python scripts/make_fake_acts.py --root /tmp/rq2-fake --signal 20,21,22 --delta 2
     # options: --model lapa-12b-instruct  --layers 0-48 (or 18-24, or 0,20,21)  --hidden 3840
     #          --bias_types gender  --seed 42  --root PATH (default: paths.rq2_root)
+    #          --ell_delta 0 (fake ell ~ N(-10, 2), shifted by +ell_delta on stereotype rows)
 """
 
 import argparse
@@ -59,10 +60,16 @@ def main():
     ap.add_argument("--signal", default="", help="planted layers, e.g. 20,21,22 (default: none)")
     ap.add_argument("--delta", type=float, default=2.0, help="signal size along u")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--ell_delta", type=float, default=0.0, help="fake ell shift on S=1 rows (0: no signal)"
+    )
     ap.add_argument("--root", default=None, help="default: paths.rq2_root")
     args = ap.parse_args()
 
     meta = build_meta(args.model, [b for b in args.bias_types.split(",") if b])
+    # Fake ell for the predictability baseline: N(-10, 2), +ell_delta on stereotype rows.
+    ell = np.random.default_rng([args.seed, 999]).normal(-10.0, 2.0, len(meta))
+    meta["ell"] = np.minimum(ell + args.ell_delta * meta["S"].to_numpy(), -1e-3)
     write_meta(meta, meta_path(args.model, args.root))
     labels = meta["S"].to_numpy().astype(np.float32)
 
