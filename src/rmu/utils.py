@@ -86,13 +86,18 @@ def load_model(model_name_or_path):
         device_map="auto" if torch.cuda.is_available() else None,
     )
 
+    return model, load_tokenizer(model_name_or_path)
+
+
+def load_tokenizer(model_name_or_path, **kwargs):
+    """The tokenizer as ``load_model`` sets it up: slow, left padding, pad = eos."""
+    model_name_or_path = resolve_model(model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(
-        model_name_or_path, trust_remote_code=True, use_fast=False
+        model_name_or_path, trust_remote_code=True, use_fast=False, **kwargs
     )
     tokenizer.pad_token_id = tokenizer.eos_token_id
     tokenizer.padding_side = "left"
     tokenizer.mask_token_id = tokenizer.eos_token_id
     tokenizer.sep_token_id = tokenizer.eos_token_id
     tokenizer.cls_token_id = tokenizer.eos_token_id
-
-    return model, tokenizer
+    return tokenizer
