@@ -95,10 +95,10 @@ jupyter:
 	@mkdir -p /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs
 	@sbatch --time=$(or $(JOB_TIME),01:00:00) slurm/jupyter.sbatch
 
-# Your jobs since this morning (or since SINCE=YYYY-MM-DD).
+# Your jobs since this morning (or since SINCE=YYYY-MM-DD). The last column is Slurm's estimated
+# start of pending jobs, or why there is none yet, e.g. (Dependency) or (Priority).
 jobs:
-	@sacct -u $$USER -S $(or $(SINCE),$$(date +%F)) -X \
-		--format=JobID,JobName%12,Start,Elapsed,NNodes,NodeList%14,State,ExitCode
+	@bash slurm/jobs.sh $(SINCE)
 
 # Follow a job's log live (Ctrl+C stops watching, not the job), e.g. make watch JOB=2274146
 # LOSSES=1 shows only the loss / cosine lines.
