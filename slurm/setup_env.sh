@@ -51,7 +51,9 @@ import regex
 
 print(f"regex:         {regex.__version__} from {regex.__file__}")
 
+import probing
 import rmu
+import sklearn
 import torch
 import transformers
 
@@ -59,6 +61,8 @@ env_dir = sys.argv[1]
 print(f"rmu from:      {rmu.__file__}")
 print(f"torch:         {torch.__version__} from {torch.__file__}")
 print(f"transformers:  {transformers.__version__}")
+print(f"scikit-learn:  {sklearn.__version__}")
+print(f"probing from:  {probing.__file__}")
 if torch.__file__.startswith(env_dir):
     sys.exit("ERROR: pip installed its own torch into the env. It must come from the module.")
 print("Env OK.")
