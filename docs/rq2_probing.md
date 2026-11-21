@@ -84,8 +84,9 @@ misspelled pair, see `EXCLUDE_ITEMS` in `src/probing/meta.py`). Code: `src/probi
    - `pvalues.csv`: `p` against the same probe's null, `p_corr` against the max over all
      probes of each shuffle (seeds with every probe only). Smallest p is 1/(B+1).
    - `ci.csv`: 2,000 resamples of the 40 targets (all rows of each drawn target), the same
-     draws for every probe and the baseline, so `gap_low`/`gap_high` are paired. The fitted
-     probes are treated as fixed (no refitting variance).
+     draws for every probe and the baseline, so the gaps are paired: `gap*` = probe − `ell`
+     (predictability), `gap_lex*` = probe − layer 0 of the same position (lexical baseline,
+     NaN on the `ell` row). The fitted probes are treated as fixed (no refitting variance).
    - `robustness_no_misspellings.csv`: the summary without the pairs whose word is
      `mainicure`, `uncertanties` or `forebearance`, from the stored predictions (no refit).
    - `gate2.txt`: the checklist as far as it can be computed (null band, fold balance, folds

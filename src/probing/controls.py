@@ -18,7 +18,8 @@ Outputs (small, in ``--results``, default ``results/rq2-probing-nov21``)::
 
     null_scores.csv                   seed, position, layer, scores (as summary.csv), C per fold
     pvalues.csv                       position, layer, metric, real, p, p_corr, B
-    ci.csv                            position, layer, metric, estimate, low, high, gap, ...
+    ci.csv                            position, layer, metric, estimate, low, high, gap (vs
+                                      ell), gap_lex (vs layer 0), their CIs
     robustness_no_misspellings.csv    position, layer, metric, all_pairs, no_misspellings, change
     c_grid_low.csv                    cgrid: scores with the new grid next to summary.csv
     gate2.txt                         the checklist, as printed by stats
@@ -62,6 +63,7 @@ from rmu.config import repo_path
 
 RESULTS = "results/rq2-probing-nov21"
 BASELINE = ("baseline_ell", -1)
+LEXICAL_LAYER = 0  # lexical baseline: the probe on the token embedding (hidden_states[0])
 # Misspelled StereoSet attribute words with the lowest ell (testoserone is already excluded in
 # probing.meta.EXCLUDE_ITEMS). The whole pair is dropped.
 MISSPELLED = ("mainicure", "uncertanties", "forebearance")
@@ -367,20 +369,51 @@ def resampled(y, z, p, flag, codes, T, counts) -> dict:
     return out
 
 
-def bootstrap_ci(y, groups, flag, preds, baseline=BASELINE, R=N_BOOT, seed=0, level=0.95):
+def bootstrap_ci(
+    y,
+    groups,
+    flag,
+    preds,
+    baseline=BASELINE,
+    lexical_layer=LEXICAL_LAYER,
+    R=N_BOOT,
+    seed=0,
+    level=0.95,
+):
     """Percentile CIs over targets for every entry of ``preds`` ({key: (z, p)}) and, paired on
-    the same draws, for the gap entry - ``baseline``. ``share_gap_le0`` is the share of
-    resamples where the gap is <= 0 (for log-loss, lower is better: read the gap's sign)."""
+    the same draws, for two gaps:
+
+    * ``gap*``: entry - ``baseline`` (predictability, ``ell``);
+    * ``gap_lex*``: entry - the probe at ``lexical_layer`` (the lexical baseline: the token
+      embedding, no context) of the same position. NaN for the baseline and when that layer
+      is not in ``preds``.
+
+    ``share_*_le0`` is the share of resamples where the gap is <= 0 (for log-loss, lower is
+    better: read the gap's sign)."""
     _, codes, counts = target_draws(groups, R, seed)
     T = counts.shape[1]
     lo, hi = 100 * (1 - level) / 2, 100 * (1 + level) / 2
     res = {key: resampled(y, z, p, flag, codes, T, counts) for key, (z, p) in preds.items()}
     base = res[baseline]
+
+    def gap_cols(prefix, est, boot, ref):
+        if ref is None:
+            return dict.fromkeys(
+                (prefix, f"{prefix}_low", f"{prefix}_high", f"share_{prefix}_le0"), np.nan
+            )
+        d = boot - ref[1]
+        return {
+            prefix: est - ref[0],
+            f"{prefix}_low": np.nanpercentile(d, lo),
+            f"{prefix}_high": np.nanpercentile(d, hi),
+            f"share_{prefix}_le0": float(np.nanmean(d <= 0)),
+        }
+
     rows = []
     for key, r in res.items():
+        lex = None if key == baseline else res.get((key[0], lexical_layer))
         for m in CI_METRICS:
             est, boot = r[m]
-            gap = boot - base[m][1]
             rows.append(
                 {
                     "position": key[0],
@@ -389,10 +422,8 @@ def bootstrap_ci(y, groups, flag, preds, baseline=BASELINE, R=N_BOOT, seed=0, le
                     "estimate": est,
                     "low": np.nanpercentile(boot, lo),
                     "high": np.nanpercentile(boot, hi),
-                    "gap": est - base[m][0],
-                    "gap_low": np.nanpercentile(gap, lo),
-                    "gap_high": np.nanpercentile(gap, hi),
-                    "share_gap_le0": float(np.nanmean(gap <= 0)),
+                    **gap_cols("gap", est, boot, base[m]),
+                    **gap_cols("gap_lex", est, boot, None if lex is None else lex[m]),
                     "R": R,
                 }
             )
@@ -733,10 +764,22 @@ def peak_report(ci, rob, pv, null) -> list:
         )
         for pos, d in c.groupby("position"):
             r = d.loc[d["estimate"].idxmax()]
+            lex = d[d["layer"] == LEXICAL_LAYER]
+            if len(lex):
+                x = lex.iloc[0]
+                lines.append(
+                    f"  {pos} layer {LEXICAL_LAYER} (lexical): {x.estimate:.3f} "
+                    f"[{x.low:.3f}, {x.high:.3f}]"
+                )
             line = (
                 f"  peak {pos} layer {int(r.layer)}: {r.estimate:.3f} [{r.low:.3f}, {r.high:.3f}],"
                 f" gap vs ell {r.gap:+.3f} [{r.gap_low:+.3f}, {r.gap_high:+.3f}]"
             )
+            if not np.isnan(r.gap_lex):
+                line += (
+                    f", gap vs layer {LEXICAL_LAYER} {r.gap_lex:+.3f} "
+                    f"[{r.gap_lex_low:+.3f}, {r.gap_lex_high:+.3f}]"
+                )
             if pv is not None:
                 q = pv[(pv["position"] == pos) & (pv["layer"] == r.layer) & (pv["metric"] == m)]
                 if len(q):

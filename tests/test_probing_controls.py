@@ -159,3 +159,26 @@ def test_progress_prints_one_line_per_percent_and_counts_seeds():
     assert lines[0].startswith("[") and "  1%" in lines[0] and "seeds done 0/2" in lines[0]
     assert lines[-1].startswith("[##########] 100%") and "200/200 fits" in lines[-1]
     assert "seeds done 2/2" in lines[-1] and "\r" not in out.getvalue()
+
+
+def test_bootstrap_gap_vs_layer0_is_paired_and_per_position():
+    y, groups, flag, preds = boot_inputs()
+    z3, p3 = preds[("first_diff", 3)]
+    z0, p0 = preds[controls.BASELINE]
+    preds = {
+        ("first_diff", 0): (z0, p0),
+        ("first_diff", 3): (z3, p3),
+        ("first_diff", 5): (z0, p0),  # same predictions as layer 0
+        ("last_subtok", 3): (z3, p3),  # no layer 0 for this position
+        controls.BASELINE: (z0, p0),
+    }
+    ci = controls.bootstrap_ci(y, groups, flag, preds, R=300).set_index(
+        ["position", "layer", "metric"]
+    )
+    l0, l3, l5 = (ci.loc[("first_diff", k, "acc_pair")] for k in (0, 3, 5))
+    assert l0["gap_lex"] == 0 and l0["gap_lex_low"] == 0 and l0["gap_lex_high"] == 0
+    assert l5["gap_lex_low"] == 0 and l5["gap_lex_high"] == 0  # same draws as layer 0
+    assert l3["gap_lex"] == pytest.approx(l3["estimate"] - l0["estimate"])
+    assert l3["gap_lex_low"] < l3["gap_lex"] < l3["gap_lex_high"]
+    assert np.isnan(ci.loc[("last_subtok", 3, "acc_pair"), "gap_lex"])
+    assert np.isnan(ci.loc[(controls.BASELINE[0], -1, "acc_pair"), "gap_lex"])
