@@ -144,3 +144,18 @@ def test_run_null_is_at_chance_and_resumes(tmp_path):
         "m", "first_diff", 0, tmp_path, ctx["y"], ctx["groups"], folds, ctx["flag"], ctx["grid"]
     )
     assert real["acc_pair"] > 0.9
+
+
+def test_progress_prints_one_line_per_percent_and_counts_seeds():
+    import io
+
+    out = io.StringIO()
+    bar = controls.Progress(total=200, n_seeds=2, seeds_done=0, width=10, every=1e9, out=out)
+    row = {"seed": 0, "position": "first_diff", "layer": 3, "acc": 0.5, "acc_pair": 0.5}
+    for i in range(200):
+        bar.update(row, seed_done=i in (99, 199))
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 100  # every 2 fits = 1%
+    assert lines[0].startswith("[") and "  1%" in lines[0] and "seeds done 0/2" in lines[0]
+    assert lines[-1].startswith("[##########] 100%") and "200/200 fits" in lines[-1]
+    assert "seeds done 2/2" in lines[-1] and "\r" not in out.getvalue()

@@ -193,23 +193,64 @@ def run_null(ctx, seeds, positions, layers, path, n_jobs=-1):
         )
         if not tasks:
             return
-        t0, n = time.time(), 0
+        left_per_seed = {s: 0 for s in seeds}
+        for t in tasks:
+            left_per_seed[t["seed"]] += 1
+        bar = Progress(len(tasks), len(seeds), sum(v == 0 for v in left_per_seed.values()))
+        print(
+            "progress: a line per 1% of the fits (and at least every 2 min while fits finish); "
+            f"nothing until the first round of {n_jobs} fits, one per worker, is done",
+            flush=True,
+        )
 
         def report(row):
-            nonlocal n
             write(row)
-            n += 1
-            if n % max(1, n_jobs // 2) == 0 or n == len(tasks):
-                el = time.time() - t0
-                left = el / n * (len(tasks) - n) / 60
-                print(
-                    f"  {n}/{len(tasks)} fits, {el / 60:.0f} min, ~{left:.0f} min left; "
-                    f"last: seed {row['seed']} {row['position']} layer "
-                    f"{row['layer']} acc {row['acc']:.3f} pair {row['acc_pair']:.3f}",
-                    flush=True,
-                )
+            left_per_seed[row["seed"]] -= 1
+            bar.update(row, seed_done=left_per_seed[row["seed"]] == 0)
 
         run_parallel(tasks, n_jobs, report)
+
+
+def _hm(seconds) -> str:
+    m = int(seconds // 60)
+    return f"{m // 60}h{m % 60:02d}m" if m >= 60 else f"{m}m"
+
+
+class Progress:
+    """Text progress bar for logs: prints a new line (no carriage returns, so ``tail -f`` and
+    the saved log both read cleanly) at every whole percent of the fits, or after ``every``
+    seconds without a line, and at the end."""
+
+    def __init__(self, total, n_seeds, seeds_done=0, width=30, every=120.0, out=None):
+        self.total, self.n_seeds, self.seeds_done = total, n_seeds, seeds_done
+        self.width, self.every, self.out = width, every, out
+        self.n, self.t0, self.last_pct, self.last_t = 0, time.time(), 0, time.time()
+
+    def line(self, row=None) -> str:
+        frac = self.n / self.total if self.total else 1.0
+        fill = int(round(frac * self.width))
+        el = time.time() - self.t0
+        eta = _hm(el / self.n * (self.total - self.n)) if self.n else "?"
+        text = (
+            f"[{'#' * fill}{'-' * (self.width - fill)}] {100 * frac:3.0f}%  "
+            f"{self.n}/{self.total} fits | seeds done {self.seeds_done}/{self.n_seeds} | "
+            f"{_hm(el)} elapsed, ~{eta} left"
+        )
+        if row is not None:
+            text += (
+                f" | last: seed {row['seed']} {row['position']} {row['layer']}: "
+                f"acc {row['acc']:.3f} pair {row['acc_pair']:.3f}"
+            )
+        return text
+
+    def update(self, row=None, seed_done=False):
+        self.n += 1
+        self.seeds_done += bool(seed_done)
+        pct = int(100 * self.n / self.total) if self.total else 100
+        now = time.time()
+        if pct > self.last_pct or now - self.last_t >= self.every or self.n == self.total:
+            self.last_pct, self.last_t = pct, now
+            print(self.line(row), file=self.out, flush=True)
 
 
 # --------------------------------------------------------------------------- p-values
