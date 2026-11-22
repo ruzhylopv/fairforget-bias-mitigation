@@ -9,11 +9,14 @@
 #
 # Pending jobs that sacct leaves out (those still waiting on a dependency) are added at the end.
 #
-#   slurm/jobs.sh [YYYY-MM-DD]        or: make jobs [SINCE=YYYY-MM-DD]
+#   slurm/jobs.sh [YYYY-MM-DD]        or: make jobs [SINCE=YYYY-MM-DD[THH:MM]] [ACTIVE=1]
 #   make jobs-watch [EVERY=60]        redrawn every minute; running jobs show their last log line
 set -eo pipefail
 
 since=${1:-$(date +%F)}
+# ACTIVE=1: only jobs still pending or running (finished, failed, cancelled ones are hidden).
+states=()
+[[ ${ACTIVE:-} == 1 ]] && states=(--state=PENDING,RUNNING,REQUEUED,SUSPENDED)
 log=$(python -m rmu.config paths.usage_log 2>/dev/null ||
     echo /e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/usage_log.tsv)
 
@@ -24,7 +27,7 @@ QUEUE=$(squeue -h -u "$USER" -o "%i|%j|%T|%S|%r|%k|%o" 2>/dev/null || true)
 # USAGE: "<job id>\t<purpose>" of the jobs in the usage log (written when a job ends).
 USAGE=$(awk -F'\t' 'NR > 1 { print $2 "\t" $5 }' "$log" 2>/dev/null | tail -n 5000 || true)
 
-sacct -u "$USER" -S "$since" -X \
+sacct -u "$USER" -S "$since" -X "${states[@]}" \
     --format=JobID,JobName%12,Start,Elapsed,NNodes,NodeList%14,State,ExitCode |
     awk '
         function describe(cmd,    w, n, i, model, bias, stage) {

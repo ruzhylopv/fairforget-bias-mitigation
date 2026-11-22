@@ -95,18 +95,19 @@ jupyter:
 	@mkdir -p /e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs
 	@sbatch --time=$(or $(JOB_TIME),01:00:00) slurm/jupyter.sbatch
 
-# Your jobs since this morning (or since SINCE=YYYY-MM-DD). The last column is Slurm's estimated
+# Your jobs since this morning (or since SINCE=YYYY-MM-DD or YYYY-MM-DDTHH:MM; ACTIVE=1 hides
+# finished, failed and cancelled ones). The last column is Slurm's estimated
 # start of pending jobs, or why there is none yet, e.g. (Dependency) or (Priority).
 jobs:
-	@bash slurm/jobs.sh $(SINCE)
+	@ACTIVE=$(ACTIVE) bash slurm/jobs.sh $(SINCE)
 
 # make jobs, redrawn every EVERY seconds (default 60; Ctrl-C to stop). Once a minute is gentle
 # on Slurm; please don't go below 30.
 jobs-watch:
 	@if command -v watch >/dev/null; then \
-		watch -t -n $(or $(EVERY),60) "date '+%F %T'; bash slurm/jobs.sh $(SINCE)"; \
+		watch -t -n $(or $(EVERY),60) "date '+%F %T'; ACTIVE=$(ACTIVE) bash slurm/jobs.sh $(SINCE)"; \
 	else \
-		while true; do clear; date '+%F %T'; bash slurm/jobs.sh $(SINCE); sleep $(or $(EVERY),60); done; \
+		while true; do clear; date '+%F %T'; ACTIVE=$(ACTIVE) bash slurm/jobs.sh $(SINCE); sleep $(or $(EVERY),60); done; \
 	fi
 
 # Follow a job's log live (Ctrl+C stops watching, not the job), e.g. make watch JOB=2274146
