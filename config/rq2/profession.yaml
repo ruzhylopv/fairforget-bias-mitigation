@@ -17,7 +17,12 @@
 #   the bootstrap and are unaffected. Gender, the headline result, keeps the full 100 seeds.
 #   The report caption states the seeds per bias type.
 
+# null_positions: the null covers last_subtok only (the position the report and figures use),
+#   halving its cost; p and p_corr exist for last_subtok probes only, p_corr is the max over
+#   its layers. CIs and gaps are computed for both positions as before (decided 2026-11-22).
+
 null_seeds: 20
+null_positions: [last_subtok]
 
 exclude_items:
   74433bbf007abaf18854138a4b8c092e: >-

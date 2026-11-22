@@ -146,7 +146,8 @@ def bias_config(bias: str) -> dict:
     * ``exclude_items``: {item_id: reason}, pairs left out of the meta (both rows);
     * ``misspelled``: attribute words whose pairs the robustness check drops;
     * ``null_seeds``: seeds of the long null for this bias type, if not the pipeline's default
-      (config/rq2/pipeline.yaml); None if not set.
+      (config/rq2/pipeline.yaml); None if not set;
+    * ``null_positions``: positions the null (and so p, p_corr) covers; None = all POSITIONS.
     """
     if bias not in BIAS_TYPES:
         raise ValueError(f"unknown bias type {bias!r}; expected one of {BIAS_TYPES}")
@@ -158,7 +159,7 @@ def bias_config(bias: str) -> dict:
         )
     with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
-    unknown = set(raw) - {"exclude_items", "misspelled", "null_seeds"}
+    unknown = set(raw) - {"exclude_items", "misspelled", "null_seeds", "null_positions"}
     if unknown:
         raise ValueError(f"{path}: unknown keys {sorted(unknown)}")
     exclude = raw.get("exclude_items") or {}
@@ -172,7 +173,25 @@ def bias_config(bias: str) -> dict:
     seeds = raw.get("null_seeds")
     if seeds is not None and (not isinstance(seeds, int) or seeds < 1):
         raise ValueError(f"{path}: null_seeds must be a positive integer")
-    return {"exclude_items": dict(exclude), "misspelled": list(misspelled), "null_seeds": seeds}
+    positions = raw.get("null_positions")
+    if positions is not None and (
+        not isinstance(positions, list) or not positions or not set(positions) <= set(POSITIONS)
+    ):
+        raise ValueError(f"{path}: null_positions must be a non-empty list from {POSITIONS}")
+    return {
+        "exclude_items": dict(exclude),
+        "misspelled": list(misspelled),
+        "null_seeds": seeds,
+        "null_positions": positions,
+    }
+
+
+def null_positions(bias: str) -> list:
+    """Positions the null covers for ``bias``: the config's null_positions, else all."""
+    try:
+        return bias_config(bias)["null_positions"] or list(POSITIONS)
+    except FileNotFoundError:
+        return list(POSITIONS)
 
 
 # --------------------------------------------------------------------------- depth

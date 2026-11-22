@@ -118,6 +118,31 @@ def test_pvalues_counts_shuffles_at_least_as_good():
     assert np.isnan(pv.loc[-1, "p_corr"]) and (pv["B"] == 2).all()
 
 
+def test_pvalues_over_some_positions_ignore_the_others_and_incomplete_rows():
+    """profession/race: the null covers last_subtok only; first_diff rows left from older
+    runs (seed 0 only) must neither block the complete seeds nor enter p_corr."""
+    real = pd.DataFrame(
+        [
+            {"position": "first_diff", "layer": 0, "acc": 0.99, "acc_pair": 0.9},
+            {"position": "last_subtok", "layer": 0, "acc": 0.52, "acc_pair": 0.9},
+            {"position": "last_subtok", "layer": 1, "acc": 0.60, "acc_pair": 0.9},
+            {"position": controls.BASELINE[0], "layer": -1, "acc": 0.55, "acc_pair": 0.6},
+        ]
+    )
+    null_acc = {0: [0.50, 0.53], 1: [0.49, 0.51], -1: [0.50, 0.50]}
+    rows = [
+        {"seed": s, "position": pos, "layer": k, "acc": null_acc[k][s], "acc_pair": 0.5}
+        for s in (0, 1)
+        for pos, k in (("last_subtok", 0), ("last_subtok", 1), (controls.BASELINE[0], -1))
+    ]
+    rows.append({"seed": 0, "position": "first_diff", "layer": 0, "acc": 0.70, "acc_pair": 0.5})
+    pv = controls.pvalues(real, pd.DataFrame(rows), metrics=("acc",), positions=["last_subtok"])
+    assert set(pv["position"]) == {"last_subtok", controls.BASELINE[0]}
+    pv = pv.set_index(["position", "layer"])
+    assert pv.loc[("last_subtok", 0), "p_corr"] == pytest.approx(2 / 3)  # 0.70 not in the max
+    assert pv.loc[("last_subtok", 1), "p"] == pytest.approx(1 / 3) and (pv["B"] == 2).all()
+
+
 def test_run_null_is_at_chance_and_resumes(tmp_path):
     meta = tiny_meta()
     X = planted(meta, delta=3.0)  # strong real signal: the null must still sit near 0.5

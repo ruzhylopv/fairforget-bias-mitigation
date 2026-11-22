@@ -18,7 +18,12 @@
 #   stronger; CIs and gaps come from the bootstrap and are unaffected. The report says so.
 #   Profession uses 20 as well; gender, the headline result, keeps 100.
 
+# null_positions: the null covers last_subtok only (the position the report and figures use),
+#   halving its cost; p and p_corr exist for last_subtok probes only, p_corr is the max over
+#   its layers. CIs and gaps are computed for both positions as before (decided 2026-11-22).
+
 null_seeds: 20
+null_positions: [last_subtok]
 
 exclude_items:
   69af0dbd2998f82e05560f4eabe32d02: >-

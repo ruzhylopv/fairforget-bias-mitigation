@@ -114,6 +114,11 @@ def test_gender_config_holds_the_exclusion_and_the_misspellings():
     assert len(cfg["misspelled"]) == 17 and "testoserone" not in cfg["misspelled"]
 
 
+def test_profession_and_race_null_covers_last_subtok_only_gender_both():
+    assert io.null_positions("gender") == list(io.POSITIONS)
+    assert io.null_positions("profession") == io.null_positions("race") == ["last_subtok"]
+
+
 def test_bias_config_errors(tmp_path, monkeypatch):
     monkeypatch.setattr(io, "repo_path", lambda rel: tmp_path / rel)
     with pytest.raises(FileNotFoundError, match="race.yaml is missing"):
@@ -122,7 +127,16 @@ def test_bias_config_errors(tmp_path, monkeypatch):
     cfg = tmp_path / io.BIAS_CONFIG_DIR / "race.yaml"
 
     cfg.write_text("exclude_items:\nmisspelled: []\n")
-    assert io.bias_config("race") == {"exclude_items": {}, "misspelled": [], "null_seeds": None}
+    assert io.bias_config("race") == {
+        "exclude_items": {},
+        "misspelled": [],
+        "null_seeds": None,
+        "null_positions": None,
+    }
+    assert io.null_positions("race") == list(io.POSITIONS)
+    cfg.write_text("null_positions: [last_token]\n")
+    with pytest.raises(ValueError, match="null_positions"):
+        io.bias_config("race")
     cfg.write_text("null_seeds: 0\n")
     with pytest.raises(ValueError, match="null_seeds"):
         io.bias_config("race")

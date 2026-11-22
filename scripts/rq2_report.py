@@ -39,7 +39,13 @@ import pandas as pd  # noqa: E402
 from plot_probes import GRID, INK, INK_2, MUTED, SERIES, SURFACE  # noqa: E402
 
 from probing.gates import gate_passed, read_gate  # noqa: E402
-from probing.io import BIAS_TYPES, RESULTS_ROOT, fixed_layer, report_config  # noqa: E402
+from probing.io import (  # noqa: E402
+    BIAS_TYPES,
+    RESULTS_ROOT,
+    fixed_layer,
+    null_positions,
+    report_config,
+)
 from rmu.config import load_config, repo_path  # noqa: E402
 
 BASELINE = "baseline_ell"
@@ -124,6 +130,7 @@ def load_run(bias, model, folder, cfg) -> pd.DataFrame:
     if null_path.exists():
         # The null's 95% range per probe (2.5-97.5% over seeds), for the chance band.
         null = pd.read_csv(null_path)
+        null = null[null["position"].isin([*null_positions(bias), "baseline_ell"])]
         cols = [c for c in null.columns if c.startswith(("acc", "logloss"))]
         q = (
             null.melt(["seed", "position", "layer"], cols, var_name="metric")

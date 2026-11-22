@@ -55,6 +55,7 @@ from probing.io import (
     load_layer,
     load_meta,
     n_decoder_layers,
+    null_positions,
     record_run,
     rel_depth,
     report_config,
@@ -285,15 +286,18 @@ def complete_seeds(null, probes) -> list:
     return sorted(s for s, got in have.items() if want <= got)
 
 
-def pvalues(real, null, metrics=ACC_METRICS) -> pd.DataFrame:
+def pvalues(real, null, metrics=ACC_METRICS, positions=None) -> pd.DataFrame:
     """Permutation p-values per probe and metric (higher = better), B = complete null seeds.
 
     p      = (1 + #{b: acc_b >= acc_real}) / (B + 1), the same probe in shuffle b;
     p_corr = (1 + #{b: max over probes of acc_b >= acc_real}) / (B + 1), the max over all
              probes of shuffle b (not the baseline), which corrects for testing every layer.
 
-    The baseline gets its own p (from its own null) and no p_corr.
+    The baseline gets its own p (from its own null) and no p_corr. ``positions``: only probes
+    at these positions get p-values, and p_corr is the max over them (None = all).
     """
+    if positions is not None:
+        real = real[real["position"].isin([*positions, BASELINE[0]])]
     is_base = real["position"] == BASELINE[0]
     probes = list(zip(real.loc[~is_base, "position"], real.loc[~is_base, "layer"]))
     seeds = complete_seeds(null, probes)
@@ -663,7 +667,11 @@ def main(argv=None):
             default=None,
             help="data root (default: paths.rq2_root); results then go to {root}/results",
         )
-        s.add_argument("--positions", default=",".join(POSITIONS))
+        s.add_argument(
+            "--positions",
+            default=None,
+            help="default: all; for null, the bias config's null_positions",
+        )
         s.add_argument(
             "--layers",
             default=None,
@@ -682,7 +690,10 @@ def main(argv=None):
     ctx = load_context(paths)
     summary_path = results / "summary.csv"
     summary = pd.read_csv(summary_path) if summary_path.exists() else None
-    positions = [p for p in args.positions.split(",") if p]
+    if args.positions:
+        positions = [p for p in args.positions.split(",") if p]
+    else:
+        positions = null_positions(args.bias) if args.cmd == "null" else list(POSITIONS)
     if args.layers:
         layers = parse_layers(args.layers)
     elif summary is not None:
@@ -777,9 +788,12 @@ def main(argv=None):
 
         null_path = results / "null_scores.csv"
         null = pd.read_csv(null_path) if null_path.exists() else None
+        covered = null_positions(args.bias)  # profession/race: last_subtok only
+        if null is not None:  # rows of other positions (older runs) are left out
+            null = null[null["position"].isin([*covered, BASELINE[0]])]
         pv = None
         if null is not None and not null.empty:
-            pv = pvalues(summary, null)
+            pv = pvalues(summary, null, positions=covered)
             pv.to_csv(results / "pvalues.csv", index=False)
             print(f"pvalues.csv: B = {pv['B'].iloc[0]} complete null seeds")
         cg_path = results / "c_grid_low.csv"
@@ -876,8 +890,8 @@ def peak_report(ci, rob, pv, null) -> list:
                         f", p {q.p.iloc[0]:.3f}, p_corr {q.p_corr.iloc[0]:.3f} (B {q.B.iloc[0]})"
                     )
             lines.append(line + _rob(rob, (pos, int(r.layer)), m))
-            if null is not None and not null.empty:
-                n = null[null["position"] == pos][m]
+            n = null[null["position"] == pos][m] if null is not None else pd.Series()
+            if len(n):
                 lines.append(
                     f"    null range over all layers and seeds: {n.min():.3f}-{n.max():.3f}"
                 )

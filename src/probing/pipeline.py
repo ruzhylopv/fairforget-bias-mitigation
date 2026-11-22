@@ -47,6 +47,7 @@ from probing.io import (
     POSITIONS,
     bias_config,
     n_decoder_layers,
+    null_positions,
     read_meta,
     record_run,
     run_paths,
@@ -214,10 +215,11 @@ def null_status(n_seeds):
         summary = _summary(run)
         if summary is None or not run.null_csv.exists():
             return False, f"no null_scores.csv for seeds 0-{n_seeds - 1}"
+        covered = null_positions(run.paths.bias)  # profession/race: last_subtok only
         probes = [
             (pos, int(k))
             for pos, k in zip(summary["position"], summary["layer"])
-            if pos != BASELINE[0]
+            if pos != BASELINE[0] and pos in covered
         ]
         have = set(complete_seeds(pd.read_csv(run.null_csv), probes))
         missing = sorted(set(range(n_seeds)) - have)
