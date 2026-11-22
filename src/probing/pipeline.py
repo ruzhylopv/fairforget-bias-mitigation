@@ -378,6 +378,15 @@ def run_stage(run, stage, dry_run=False, log=print, outcome=None) -> dict:
     return outcome
 
 
+def null_seeds_for(bias, cfg=None) -> int:
+    """Seeds of the long null: the bias config's null_seeds (race: 20), else the pipeline's."""
+    cfg = cfg or pipeline_config()
+    try:
+        return bias_config(bias)["null_seeds"] or cfg["null_seeds"]
+    except (FileNotFoundError, ValueError):  # check_inputs reports a missing or broken config
+        return cfg["null_seeds"]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", required=True)
@@ -388,8 +397,15 @@ def main(argv=None):
     ap.add_argument("--n_jobs", type=int, default=None, help="passed to probe / controls")
     cfg = pipeline_config()
     ap.add_argument("--quick_seeds", type=int, default=cfg["quick_null_seeds"])
-    ap.add_argument("--null_seeds", type=int, default=cfg["null_seeds"])
+    ap.add_argument(
+        "--null_seeds",
+        type=int,
+        default=None,
+        help="default: null_seeds of config/rq2/{bias}.yaml, else of config/rq2/pipeline.yaml",
+    )
     args = ap.parse_args(argv)
+    if args.null_seeds is None:
+        args.null_seeds = null_seeds_for(args.bias, cfg)
 
     paths = run_paths(args.model, args.bias, root=args.root)
     run = Run(paths, args.root, args.n_jobs, args.quick_seeds, args.null_seeds)

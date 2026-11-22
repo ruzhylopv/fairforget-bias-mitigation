@@ -144,7 +144,9 @@ def bias_config(bias: str) -> dict:
     """Settings of a bias type from ``config/rq2/{bias}.yaml``:
 
     * ``exclude_items``: {item_id: reason}, pairs left out of the meta (both rows);
-    * ``misspelled``: attribute words whose pairs the robustness check drops.
+    * ``misspelled``: attribute words whose pairs the robustness check drops;
+    * ``null_seeds``: seeds of the long null for this bias type, if not the pipeline's default
+      (config/rq2/pipeline.yaml); None if not set.
     """
     if bias not in BIAS_TYPES:
         raise ValueError(f"unknown bias type {bias!r}; expected one of {BIAS_TYPES}")
@@ -156,7 +158,7 @@ def bias_config(bias: str) -> dict:
         )
     with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
-    unknown = set(raw) - {"exclude_items", "misspelled"}
+    unknown = set(raw) - {"exclude_items", "misspelled", "null_seeds"}
     if unknown:
         raise ValueError(f"{path}: unknown keys {sorted(unknown)}")
     exclude = raw.get("exclude_items") or {}
@@ -167,7 +169,10 @@ def bias_config(bias: str) -> dict:
         raise ValueError(f"{path}: exclude_items must map item_id -> reason (both strings)")
     if not isinstance(misspelled, list) or not all(isinstance(w, str) for w in misspelled):
         raise ValueError(f"{path}: misspelled must be a list of words")
-    return {"exclude_items": dict(exclude), "misspelled": list(misspelled)}
+    seeds = raw.get("null_seeds")
+    if seeds is not None and (not isinstance(seeds, int) or seeds < 1):
+        raise ValueError(f"{path}: null_seeds must be a positive integer")
+    return {"exclude_items": dict(exclude), "misspelled": list(misspelled), "null_seeds": seeds}
 
 
 # --------------------------------------------------------------------------- depth

@@ -11,6 +11,9 @@ A run is finished once ``probing.controls stats`` has written its ``ci.csv``. Wr
                              and per-sentence accuracy, one block each in the LaTeX table
     fig_gap_by_depth.png/pdf small multiples: bias type x model, gap probe - ell with its CI
                              against relative depth, the fixed depth as a vertical line
+    fig_acc_by_depth.png/pdf same grid: probe accuracy against relative depth, with ell, the
+                             layer-0 probe (each with its CI band) as horizontal lines, and
+                             the null's 2.5-97.5% range per layer (null_low/high in all_runs)
     fig_forest.png/pdf       the gaps vs ell and vs layer 0 at the fixed depth, one row per run
 
 Gaps, not raw accuracies, are compared across runs: every run has its own baseline. The table
@@ -117,6 +120,20 @@ def load_run(bias, model, folder, cfg) -> pd.DataFrame:
     if pv_path.exists():
         pv = pd.read_csv(pv_path).drop(columns=["real"])  # = ci's estimate
         ci = ci.merge(pv, on=keys, how="left", validate="one_to_one")
+    null_path = folder / "null_scores.csv"
+    if null_path.exists():
+        # The null's 95% range per probe (2.5-97.5% over seeds), for the chance band.
+        null = pd.read_csv(null_path)
+        cols = [c for c in null.columns if c.startswith(("acc", "logloss"))]
+        q = (
+            null.melt(["seed", "position", "layer"], cols, var_name="metric")
+            .groupby(keys)["value"]
+            .quantile([0.025, 0.975])
+            .unstack()
+            .set_axis(["null_low", "null_high"], axis=1)
+            .reset_index()
+        )
+        ci = ci.merge(q, on=keys, how="left", validate="one_to_one")
     summary = pd.read_csv(folder / "summary.csv") if (folder / "summary.csv").exists() else None
     if summary is not None:
         # Per-probe columns (chosen C, edge, warnings), and n_pairs of the metric's subset.
@@ -246,6 +263,21 @@ def _ci(est, low, high, signed=False, note="") -> str:
     )
 
 
+def null_note(table) -> str:
+    """Caption sentence on the null: its seeds B per bias type and the smallest p, 1/(B+1)."""
+    b = table.dropna(subset=["B"]).astype({"B": int}).groupby("B")["bias"].unique()
+    if b.empty:
+        return ""
+    parts = [
+        f"{B} for {', '.join(sorted(biases, key=BIAS_TYPES.index))} "
+        f"(smallest $p$ {1 / (B + 1):.3f})"
+        for B, biases in sorted(b.items(), reverse=True)
+    ]
+    if len(parts) == 1:
+        return f"$p$: shuffled-label null with {parts[0].replace(' for ', ' seeds for ', 1)}."
+    return r"$p$: shuffled-label null with $B$ seeds, $B$ = " + "; ".join(parts) + "."
+
+
 def to_latex(table) -> str:
     """booktabs table for the paper: a block of rows (one per run) per metric."""
     metrics = list(dict.fromkeys(table["metric"]))
@@ -317,8 +349,8 @@ def to_latex(table) -> str:
         r"before other runs were looked at; $^\dagger$ the run it was chosen on. Gaps are probe "
         r"minus baseline at that depth; target first/after: pairs where the target comes "
         r"before/after the attribute word (gap vs \texttt{ell}). Best layer: post hoc, as "
-        r"relative depth, with the max-over-layers corrected $p$. $^\ast$ few targets "
-        r"(coarse CIs).}",
+        r"relative depth, with the max-over-layers corrected $p$. " + null_note(table) + r" "
+        r"$^\ast$ few targets (coarse CIs).}",
         r"\label{tab:rq2}",
         r"\end{table*}",
     ]
@@ -422,6 +454,151 @@ def fig_gap_by_depth(all_runs, out, metric="acc_pair", cfg=None):
     plt.close(fig)
 
 
+def fig_acc_by_depth(all_runs, out, metric="acc_pair", cfg=None):
+    """Rows = bias type, columns = model: probe accuracy with its CI against relative depth at
+    the fixed position, with the two baselines as horizontal lines (ell, and the probe at layer
+    0, each with its CI band) and chance at 0.5. Both gaps are the probe curve minus one of these
+    constants; their paired CIs (narrower than the bands suggest) are in the table."""
+    cfg = cfg or report_config()
+    fd = cfg["fixed_depth"]
+    biases = [b for b in BIAS_TYPES if b in set(all_runs["bias"])]
+    models = _model_order(set(all_runs["model"]))
+    d = all_runs[all_runs["metric"] == metric]
+    fig, axes = plt.subplots(
+        len(biases),
+        len(models),
+        figsize=(1.0 + 3.2 * len(models), 1.2 + 2.4 * len(biases)),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        constrained_layout=True,
+    )
+    fig.set_facecolor(SURFACE)
+    series = [("probe", INK), ("ell (predictability)", VS_ELL), ("layer 0 (lexical)", VS_LAYER0)]
+    for i, bias in enumerate(biases):
+        for j, model in enumerate(models):
+            ax = axes[i, j]
+            _style(ax)
+            run_d = d[(d["bias"] == bias) & (d["model"] == model)]
+            r = run_d[run_d["position"] == fd["position"]].sort_values("rel_depth")
+            if i == 0:
+                ax.set_title(model, loc="left", fontsize=10, color=INK, fontweight="bold")
+            if j == 0:
+                ax.set_ylabel(
+                    f"{bias}\n{METRIC_NAMES.get(metric, metric)}", color=INK_2, fontsize=9
+                )
+            if r.empty:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "no run yet",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    color=MUTED,
+                    fontsize=9,
+                )
+                continue
+            ax.axhline(0.5, color=MUTED, lw=0.8, zorder=1)
+            if "null_low" in r and r["null_low"].notna().any():  # the measured null, per layer
+                ax.fill_between(
+                    r["rel_depth"],
+                    r["null_low"],
+                    r["null_high"],
+                    color=MUTED,
+                    alpha=0.25,
+                    lw=0,
+                    zorder=1,
+                )
+            ell = _row(run_d, BASELINE, -1, metric)
+            l0 = _row(r, fd["position"], 0, metric)
+            for ref, color in ((ell, VS_ELL), (l0, VS_LAYER0)):
+                if ref is None:
+                    continue
+                ax.axhspan(ref["low"], ref["high"], color=color, alpha=0.12, lw=0, zorder=1)
+                ax.axhline(ref["estimate"], color=color, lw=1.5, ls=(0, (4, 2)), zorder=2)
+            ax.fill_between(
+                r["rel_depth"], r["low"], r["high"], color=INK, alpha=0.12, lw=0, zorder=2
+            )
+            ax.plot(r["rel_depth"], r["estimate"], color=INK, lw=2, zorder=3)
+            ax.axvline(fd["rel_depth"], color=INK_2, lw=1, ls=(0, (1, 2)), zorder=2)
+            if i == 0 and j == 0:  # direct labels once, at the right end
+                for (name, _), y in zip(
+                    series,
+                    (
+                        r["estimate"].iloc[-1],
+                        ell["estimate"] if ell is not None else np.nan,
+                        l0["estimate"] if l0 is not None else np.nan,
+                    ),
+                ):
+                    if pd.notna(y):
+                        ax.annotate(
+                            name.split(" (")[0],
+                            (1.0, y),
+                            xytext=(-4, 4),
+                            textcoords="offset points",
+                            ha="right",
+                            va="bottom",
+                            color=INK_2,
+                            fontsize=7.5,
+                        )
+            run = r.iloc[0]
+            notes = []
+            if run["depth_chosen_here"]:
+                notes.append("fixed depth chosen on this run")
+            if pd.notna(run["n_targets"]) and run["n_targets"] < cfg.get("few_targets_below", 20):
+                notes.append(f"only {int(run['n_targets'])} targets")
+            notes += [f"{g} {run[g]}" for g in ("gate1", "gate2") if run[g] != "PASS"]
+            if "B" in run and pd.notna(run["B"]) and run["B"] < 100:
+                notes.append(f"null from {int(run['B'])} seeds")
+            if notes:
+                ax.text(
+                    0.98,
+                    0.04,
+                    "; ".join(notes),
+                    transform=ax.transAxes,
+                    ha="right",
+                    va="bottom",
+                    color=MUTED,
+                    fontsize=7.5,
+                )
+    for ax in axes[-1]:
+        ax.set_xlabel("relative depth (layer / n_layers)", color=INK_2, fontsize=9)
+        ax.set_xlim(0, 1)
+    handles = [
+        plt.Line2D(
+            [], [], color=c, lw=2 if n == "probe" else 1.5, ls="-" if n == "probe" else (0, (4, 2))
+        )
+        for n, c in series
+    ]
+    handles.append(
+        (
+            plt.Rectangle((0, 0), 1, 1, color=MUTED, alpha=0.25, lw=0),
+            plt.Line2D([], [], color=MUTED, lw=0.8),
+        )
+    )
+    fig.legend(
+        handles,
+        [n for n, _ in series] + ["chance (band: null, 95% of seeds)"],
+        loc="outside lower center",
+        ncol=4,
+        frameon=False,
+        fontsize=8.5,
+        labelcolor=INK_2,
+    )
+    title = (
+        f"Probe accuracy by depth, {METRIC_NAMES.get(metric, metric)}, {fd['position']}. "
+        "Bands: 95% CI over targets; grey: shuffled-label null, 2.5-97.5% over seeds; "
+        f"dotted: fixed depth {fd['rel_depth']:.3f}. "
+        "Gaps and their paired CIs: see the table."
+    )
+    chars = int(fig.get_size_inches()[0] * 13)
+    fig.suptitle(textwrap.fill(title, chars), x=0.01, ha="left", fontsize=9, color=INK_2)
+    for ext in ("png", "pdf"):
+        fig.savefig(f"{out}.{ext}", dpi=200, facecolor=SURFACE)
+    plt.close(fig)
+
+
 def fig_forest(table, out):
     """One row per run: the gaps vs ell and vs layer 0 at the fixed depth, with CIs; 0 marked."""
     t = table.copy()
@@ -515,13 +692,14 @@ def main(argv=None):
     table.to_csv(root / "report_table.csv", index=False)
     (root / "report_table.tex").write_text(to_latex(table), encoding="utf-8")
     fig_gap_by_depth(all_runs, root / "fig_gap_by_depth", args.metric, cfg)
+    fig_acc_by_depth(all_runs, root / "fig_acc_by_depth", args.metric, cfg)
     fig_forest(table[table["metric"] == args.metric], root / "fig_forest")
 
     runs = table[["model", "bias"]].drop_duplicates().apply(" / ".join, axis=1).tolist()
     print(f"{len(runs)} runs: {', '.join(runs)}")
     print(
         f"wrote all_runs.csv ({len(all_runs)} rows), report_table.csv/.tex, "
-        f"fig_gap_by_depth.png/pdf, fig_forest.png/pdf in {root}"
+        f"fig_gap_by_depth / fig_acc_by_depth / fig_forest .png/pdf in {root}"
     )
 
 

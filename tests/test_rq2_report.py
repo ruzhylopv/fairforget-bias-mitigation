@@ -141,8 +141,20 @@ def test_main_writes_the_tables_and_both_figures(two_runs, capsys):
         "report_table.tex",
         "fig_gap_by_depth.png",
         "fig_gap_by_depth.pdf",
+        "fig_acc_by_depth.png",
+        "fig_acc_by_depth.pdf",
         "fig_forest.png",
         "fig_forest.pdf",
     ):
         assert (two_runs / name).stat().st_size > 0, name
     assert "2 runs" in capsys.readouterr().out
+
+
+def test_the_caption_states_the_null_seeds_per_bias_type():
+    t = pd.DataFrame({"bias": ["gender", "profession", "race", "race"], "B": [100, 100, 20, 20.0]})
+    note = rq2_report.null_note(t)
+    assert "100 for gender, profession (smallest $p$ 0.010)" in note
+    assert "20 for race (smallest $p$ 0.048)" in note
+    assert rq2_report.null_note(t[t["bias"] == "gender"]).endswith(
+        "100 seeds for gender (smallest $p$ 0.010)."
+    )

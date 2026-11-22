@@ -122,7 +122,10 @@ def test_bias_config_errors(tmp_path, monkeypatch):
     cfg = tmp_path / io.BIAS_CONFIG_DIR / "race.yaml"
 
     cfg.write_text("exclude_items:\nmisspelled: []\n")
-    assert io.bias_config("race") == {"exclude_items": {}, "misspelled": []}
+    assert io.bias_config("race") == {"exclude_items": {}, "misspelled": [], "null_seeds": None}
+    cfg.write_text("null_seeds: 0\n")
+    with pytest.raises(ValueError, match="null_seeds"):
+        io.bias_config("race")
     cfg.write_text("exclude_items:\n  abc:\n")  # no reason
     with pytest.raises(ValueError, match="item_id -> reason"):
         io.bias_config("race")
