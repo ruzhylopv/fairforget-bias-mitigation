@@ -156,10 +156,10 @@ def test_workers_are_capped_by_memory_not_only_cpus(monkeypatch):
     shape, memory = (7874, 3840), 450e9
     n, why = probe.n_workers(490, -1, shape, memory=memory)
     per_worker = probe.FIT_COPIES * shape[0] * shape[1] * 8 + probe.FIT_OVERHEAD
-    assert 50 < n < 288 and n * per_worker <= probe.MEMORY_SHARE * memory
+    assert 40 < n < 288 and n * per_worker <= probe.MEMORY_SHARE * memory
     assert why.startswith("limit: memory") and "450 GB free" in why
-    # gender (2,040 rows) still gets one worker per CPU, and few tasks need few workers
-    n, why = probe.n_workers(490, -1, (2040, 3840), memory=memory)
+    # a small layer gets one worker per CPU, and few tasks need few workers
+    n, why = probe.n_workers(490, -1, (500, 3840), memory=memory)
     assert n == 288 and why.startswith("limit: CPUs")
     assert probe.n_workers(14, -1, shape, memory=memory)[0] == 14
     # --n_jobs wins; at least one worker even with almost no memory

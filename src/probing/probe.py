@@ -332,11 +332,13 @@ def usable_cpus() -> int:
         return os.cpu_count() or 1
 
 
-# Peak memory of one fit_layer call, in copies of the float64 layer matrix: X itself, the outer
-# training split, the inner split, its scaled copy, and the solver's work arrays.
-FIT_COPIES = 8  # 6 copies + margin: the estimate is not measured
+# Peak memory of one worker, in copies of the float64 layer matrix X. Measured on JUPITER
+# (scripts/measure_fit_memory.py, qwen3/profession layer 18, 2026-11-22): one fit peaks 15.6
+# copies above the start (a laptop: ~6); workers of the killed null jobs averaged ~21 (sacct
+# MaxRSS / workers), as each runs many fits in a row. 24 covers both.
+FIT_COPIES = 24
 FIT_OVERHEAD = 0.4e9  # bytes per worker: Python, numpy, scikit-learn
-MEMORY_SHARE = 0.7  # of the memory available when the workers start
+MEMORY_SHARE = 0.9  # of the free memory (the margin is in FIT_COPIES)
 
 
 def _kib(text, key) -> float | None:
