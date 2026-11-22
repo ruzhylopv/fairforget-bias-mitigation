@@ -334,31 +334,81 @@ def usable_cpus() -> int:
 
 # Peak memory of one fit_layer call, in copies of the float64 layer matrix: X itself, the outer
 # training split, the inner split, its scaled copy, and the solver's work arrays.
-FIT_COPIES = 6
+FIT_COPIES = 8  # 6 copies + margin: the estimate is not measured
 FIT_OVERHEAD = 0.4e9  # bytes per worker: Python, numpy, scikit-learn
 MEMORY_SHARE = 0.7  # of the memory available when the workers start
 
 
-def available_memory() -> float | None:
-    """Bytes this job can still use: MemAvailable, capped by the cgroup limit Slurm sets (minus
-    what the cgroup already uses). None where neither can be read (macOS)."""
-    avail = None
+def _kib(text, key) -> float | None:
+    """``key: <n> kB`` from a meminfo-style text, in bytes."""
+    for line in text.splitlines():
+        parts = line.replace(":", " ").split()
+        if key in parts:
+            i = parts.index(key)
+            return float(parts[i + 1]) * 1024
+    return None
+
+
+def memory_sources(root="/") -> dict:
+    """Every limit on the memory this process may still use, in bytes, from whatever can be
+    read (empty on macOS):
+
+    * ``cpu_numa``: free + page cache on the NUMA nodes that have CPUs. On a GH200 node the
+      GPUs' HBM shows up as extra CPU-less NUMA nodes, so /proc/meminfo's MemAvailable counts
+      ~380 GB that worker processes can't safely use (the cap let 288 workers start on
+      llama/race and the kernel killed them).
+    * ``meminfo``: MemAvailable (only when there is no NUMA information).
+    * ``slurm``: SLURM_MEM_PER_NODE, the job's allocation.
+    * ``cgroup``: the cgroup's limit minus its usage (v2 memory.max, or v1 limit_in_bytes).
+    """
+    root = Path(root)
+    out = {}
+    nodes = sorted((root / "sys/devices/system/node").glob("node[0-9]*"))
+    cpu_nodes = [
+        n for n in nodes if (n / "cpulist").exists() and (n / "cpulist").read_text().strip()
+    ]
+    if cpu_nodes:
+        free = 0.0
+        for n in cpu_nodes:
+            text = (n / "meminfo").read_text()
+            free += sum(_kib(text, k) or 0.0 for k in ("MemFree", "FilePages"))
+        out["cpu_numa"] = free
+    else:
+        try:
+            avail = _kib((root / "proc/meminfo").read_text(), "MemAvailable")
+            if avail is not None:
+                out["meminfo"] = avail
+        except OSError:
+            pass
+    if os.environ.get("SLURM_MEM_PER_NODE", "").isdigit():
+        out["slurm"] = float(os.environ["SLURM_MEM_PER_NODE"]) * 2**20  # MiB
     try:
-        for line in open("/proc/meminfo"):
-            if line.startswith("MemAvailable:"):
-                avail = float(line.split()[1]) * 1024
-    except OSError:
+        for line in (root / "proc/self/cgroup").read_text().splitlines():
+            _, controllers, rel = line.split(":", 2)
+            if controllers == "":  # v2
+                base = root / "sys/fs/cgroup" / rel.lstrip("/")
+                limit, used = base / "memory.max", base / "memory.current"
+            elif "memory" in controllers.split(","):  # v1
+                base = root / "sys/fs/cgroup/memory" / rel.lstrip("/")
+                limit, used = base / "memory.limit_in_bytes", base / "memory.usage_in_bytes"
+            else:
+                continue
+            if limit.exists() and used.exists():
+                lim = limit.read_text().strip()
+                if lim != "max" and float(lim) < 2**60:  # v1 "unlimited" is ~2**63
+                    out["cgroup"] = float(lim) - float(used.read_text())
+    except (OSError, ValueError):
         pass
-    try:  # cgroup v2: /proc/self/cgroup is "0::/<path>"
-        rel = open("/proc/self/cgroup").read().strip().split("::", 1)[1]
-        base = Path("/sys/fs/cgroup") / rel.lstrip("/")
-        limit = (base / "memory.max").read_text().strip()
-        if limit != "max":
-            free = float(limit) - float((base / "memory.current").read_text())
-            avail = free if avail is None else min(avail, free)
-    except (OSError, IndexError, ValueError):
-        pass
-    return avail
+    return out
+
+
+def available_memory(root="/") -> tuple[float | None, str]:
+    """(bytes, which source): the smallest of ``memory_sources``; (None, "") if none."""
+    src = memory_sources(root)
+    if not src:
+        return None, ""
+    name = min(src, key=src.get)
+    return src[name], name
 
 
 def n_workers(n_tasks, n_jobs, shape, memory=None) -> tuple[int, str]:
@@ -372,14 +422,12 @@ def n_workers(n_tasks, n_jobs, shape, memory=None) -> tuple[int, str]:
         return max(1, min(n_tasks, n_jobs)), "--n_jobs"
     cpus = usable_cpus()
     per_worker = FIT_COPIES * shape[0] * shape[1] * 8 + FIT_OVERHEAD
-    memory = available_memory() if memory is None else memory
+    memory, source = available_memory() if memory is None else (memory, "given")
     by_memory = cpus if memory is None else max(1, int(MEMORY_SHARE * memory // per_worker))
     n = max(1, min(n_tasks, cpus, by_memory))
-    why = (
-        f"{cpus} CPUs"
-        if by_memory >= cpus or n == n_tasks
-        else (f"memory: {memory / 1e9:.0f} GB available, ~{per_worker / 1e9:.1f} GB per fit")
-    )
+    limit = "CPUs" if by_memory >= cpus else "memory"
+    mem = "memory unknown" if memory is None else f"{memory / 1e9:.0f} GB free ({source})"
+    why = f"limit: {limit}; {cpus} CPUs, {mem}, ~{per_worker / 1e9:.1f} GB per fit"
     return n, why
 
 

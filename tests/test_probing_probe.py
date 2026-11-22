@@ -156,11 +156,64 @@ def test_workers_are_capped_by_memory_not_only_cpus(monkeypatch):
     shape, memory = (7874, 3840), 450e9
     n, why = probe.n_workers(490, -1, shape, memory=memory)
     per_worker = probe.FIT_COPIES * shape[0] * shape[1] * 8 + probe.FIT_OVERHEAD
-    assert 100 < n < 288 and n * per_worker <= probe.MEMORY_SHARE * memory
-    assert why.startswith("memory")
+    assert 50 < n < 288 and n * per_worker <= probe.MEMORY_SHARE * memory
+    assert why.startswith("limit: memory") and "450 GB free" in why
     # gender (2,040 rows) still gets one worker per CPU, and few tasks need few workers
-    assert probe.n_workers(490, -1, (2040, 3840), memory=memory) == (288, "288 CPUs")
+    n, why = probe.n_workers(490, -1, (2040, 3840), memory=memory)
+    assert n == 288 and why.startswith("limit: CPUs")
     assert probe.n_workers(14, -1, shape, memory=memory)[0] == 14
     # --n_jobs wins; at least one worker even with almost no memory
     assert probe.n_workers(490, 8, shape, memory=memory) == (8, "--n_jobs")
     assert probe.n_workers(490, -1, shape, memory=1e6)[0] == 1
+
+
+def _fake_node(root, cgroup):
+    """A GH200-like node: 2 CPU NUMA nodes (100 GB free each) and 2 CPU-less HBM nodes
+    (90 GB free each); /proc/meminfo counts all four."""
+    gb = 2**30 // 1024  # kB per GiB
+    for i, cpus in enumerate(["0-71", "72-143", "", ""]):
+        n = root / f"sys/devices/system/node/node{i}"
+        n.mkdir(parents=True)
+        (n / "cpulist").write_text(cpus + "\n")
+        free = 80 if cpus else 90
+        (n / "meminfo").write_text(
+            f"Node {i} MemTotal: {120 * gb} kB\nNode {i} MemFree: {free * gb} kB\n"
+            f"Node {i} FilePages: {20 * gb if cpus else 0} kB\n"
+        )
+    (root / "proc/self").mkdir(parents=True)
+    (root / "proc/meminfo").write_text(f"MemAvailable: {380 * gb} kB\n")
+    (root / "proc/self/cgroup").write_text(cgroup)
+
+
+def test_memory_counts_only_numa_nodes_with_cpus_and_slurm_limits(tmp_path, monkeypatch):
+    from probing import probe
+
+    monkeypatch.delenv("SLURM_MEM_PER_NODE", raising=False)
+    gib = 2**30
+    root = tmp_path / "v2"
+    _fake_node(root, "0::/slurm/job1\n")
+    cg = root / "sys/fs/cgroup/slurm/job1"
+    cg.mkdir(parents=True)
+    (cg / "memory.max").write_text("max\n")
+    (cg / "memory.current").write_text("0\n")
+    src = probe.memory_sources(root)
+    assert src == {"cpu_numa": 200 * gib}  # not the 380 GiB of MemAvailable; no cgroup limit
+    assert probe.available_memory(root) == (200 * gib, "cpu_numa")
+
+    (cg / "memory.max").write_text(str(150 * gib))
+    (cg / "memory.current").write_text(str(10 * gib))
+    assert probe.available_memory(root) == (140 * gib, "cgroup")
+    monkeypatch.setenv("SLURM_MEM_PER_NODE", str(100 * 1024))  # MiB
+    assert probe.available_memory(root) == (100 * gib, "slurm")
+
+    monkeypatch.delenv("SLURM_MEM_PER_NODE")
+    root = tmp_path / "v1"
+    _fake_node(root, "4:cpu,cpuacct:/slurm/job1\n9:memory:/slurm/job1\n")
+    cg = root / "sys/fs/cgroup/memory/slurm/job1"
+    cg.mkdir(parents=True)
+    (cg / "memory.limit_in_bytes").write_text(str(120 * gib))
+    (cg / "memory.usage_in_bytes").write_text(str(20 * gib))
+    assert probe.available_memory(root) == (100 * gib, "cgroup")
+
+    # no NUMA information: MemAvailable
+    assert probe.memory_sources(tmp_path / "nothing") == {}
