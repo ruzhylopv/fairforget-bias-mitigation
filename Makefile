@@ -1,4 +1,4 @@
-.PHONY: setup test lint format cluster-pull env smoke submit rq2evaluate unlearn-eval jupyter tunnel jobs watch
+.PHONY: setup test lint format cluster-pull env smoke submit rq2 evaluate unlearn-eval jupyter tunnel jobs jobs-watch watch
 
 # ---- Laptop -------------------------------------------------------------
 
@@ -99,6 +99,15 @@ jupyter:
 # start of pending jobs, or why there is none yet, e.g. (Dependency) or (Priority).
 jobs:
 	@bash slurm/jobs.sh $(SINCE)
+
+# make jobs, redrawn every EVERY seconds (default 60; Ctrl-C to stop). Once a minute is gentle
+# on Slurm; please don't go below 30.
+jobs-watch:
+	@if command -v watch >/dev/null; then \
+		watch -t -n $(or $(EVERY),60) "date '+%F %T'; bash slurm/jobs.sh $(SINCE)"; \
+	else \
+		while true; do clear; date '+%F %T'; bash slurm/jobs.sh $(SINCE); sleep $(or $(EVERY),60); done; \
+	fi
 
 # Follow a job's log live (Ctrl+C stops watching, not the job), e.g. make watch JOB=2274146
 # LOSSES=1 shows only the loss / cosine lines.

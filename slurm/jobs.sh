@@ -10,6 +10,7 @@
 # Pending jobs that sacct leaves out (those still waiting on a dependency) are added at the end.
 #
 #   slurm/jobs.sh [YYYY-MM-DD]        or: make jobs [SINCE=YYYY-MM-DD]
+#   make jobs-watch [EVERY=60]        redrawn every minute; running jobs show their last log line
 set -eo pipefail
 
 since=${1:-$(date +%F)}
@@ -72,3 +73,16 @@ sacct -u "$USER" -S "$since" -X \
             }
         }
     '
+
+# Running jobs: the last line of each log (progress bars, the current pipeline step).
+logs=${JOB_LOG_DIR:-/e/scratch/e-dev-2026d09-075/fairforget-bias-mitigation/logs}
+running=$(squeue -h -u "$USER" -t RUNNING -o "%i %j" 2>/dev/null || true)
+if [[ -n $running ]]; then
+    echo
+    echo "Running, last log line:"
+    while read -r id name; do
+        joblog=$logs/$name-$id.out
+        last=$( [[ -f $joblog ]] && grep -v '^[[:space:]]*$' "$joblog" | tail -n 1 || echo "(no log yet)")
+        printf '  %-9s %s\n' "$id" "${last:0:${COLUMNS:-160}}"
+    done <<<"$running"
+fi
