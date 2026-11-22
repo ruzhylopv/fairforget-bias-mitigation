@@ -386,17 +386,25 @@ def memory_sources(root="/") -> dict:
         for line in (root / "proc/self/cgroup").read_text().splitlines():
             _, controllers, rel = line.split(":", 2)
             if controllers == "":  # v2
-                base = root / "sys/fs/cgroup" / rel.lstrip("/")
-                limit, used = base / "memory.max", base / "memory.current"
+                top, files = root / "sys/fs/cgroup", ("memory.max", "memory.current")
             elif "memory" in controllers.split(","):  # v1
-                base = root / "sys/fs/cgroup/memory" / rel.lstrip("/")
-                limit, used = base / "memory.limit_in_bytes", base / "memory.usage_in_bytes"
+                top = root / "sys/fs/cgroup/memory"
+                files = ("memory.limit_in_bytes", "memory.usage_in_bytes")
             else:
                 continue
-            if limit.exists() and used.exists():
-                lim = limit.read_text().strip()
-                if lim != "max" and float(lim) < 2**60:  # v1 "unlimited" is ~2**63
-                    out["cgroup"] = float(lim) - float(used.read_text())
+            # Slurm sets the job's limit on a parent (.../job_<id>/), not on the task's own
+            # cgroup (.../job_<id>/step_0/user/task_0, "max"): every level up to the top counts.
+            base = top / rel.lstrip("/")
+            while True:
+                limit, used = base / files[0], base / files[1]
+                if limit.exists() and used.exists():
+                    lim = limit.read_text().strip()
+                    if lim != "max" and float(lim) < 2**60:  # v1 "unlimited" is ~2**63
+                        free = float(lim) - float(used.read_text())
+                        out["cgroup"] = min(out.get("cgroup", free), free)
+                if base == top or top not in base.parents:
+                    break
+                base = base.parent
     except (OSError, ValueError):
         pass
     return out

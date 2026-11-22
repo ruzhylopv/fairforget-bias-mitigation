@@ -215,5 +215,16 @@ def test_memory_counts_only_numa_nodes_with_cpus_and_slurm_limits(tmp_path, monk
     (cg / "memory.usage_in_bytes").write_text(str(20 * gib))
     assert probe.available_memory(root) == (100 * gib, "cgroup")
 
+    # cgroup v2 as Slurm sets it: the limit is on the job's cgroup, the task's own says "max"
+    root = tmp_path / "v2-nested"
+    _fake_node(root, "0::/system.slice/slurmstepd.scope/job_7/step_0/user/task_0\n")
+    job = root / "sys/fs/cgroup/system.slice/slurmstepd.scope/job_7"
+    task = job / "step_0/user/task_0"
+    task.mkdir(parents=True)
+    for d, lim, cur in ((task, "max", 5), (job, str(90 * gib), 30 * gib)):
+        (d / "memory.max").write_text(lim + "\n")
+        (d / "memory.current").write_text(f"{cur}\n")
+    assert probe.available_memory(root) == (60 * gib, "cgroup")
+
     # no NUMA information: MemAvailable
     assert probe.memory_sources(tmp_path / "nothing") == {}
