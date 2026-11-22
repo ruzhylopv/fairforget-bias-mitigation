@@ -16,6 +16,7 @@
 #   memory cap (~64-68 workers), 100 seeds would take ~10-15 h per run. 20 seeds (decided
 #   2026-11-22): the smallest p is 1/21 = 0.048, so race p-values can show p < 0.05 and nothing
 #   stronger; CIs and gaps come from the bootstrap and are unaffected. The report says so.
+#   Profession uses 20 as well; gender, the headline result, keeps 100.
 
 null_seeds: 20
 

@@ -106,10 +106,11 @@ def test_extract_stage_is_the_start_of_quick(tmp_path):
     assert not run.paths.summary.exists()  # no probes in this stage
 
 
-def test_race_runs_a_20_seed_null_and_the_others_the_default():
-    """Race has the most pairs; config/rq2/race.yaml sets null_seeds: 20 (smallest p 1/21)."""
+def test_profession_and_race_run_a_20_seed_null_gender_the_default_100():
+    """Gender is the headline result (smallest p 1/101); profession and race, 3-4x its pairs,
+    set null_seeds: 20 in their configs (smallest p 1/21)."""
     default = pipeline.pipeline_config()["null_seeds"]
     assert default == 100
-    assert pipeline.null_seeds_for("race") == 20
-    assert pipeline.null_seeds_for("gender") == pipeline.null_seeds_for("profession") == default
+    assert pipeline.null_seeds_for("race") == pipeline.null_seeds_for("profession") == 20
+    assert pipeline.null_seeds_for("gender") == default
     assert pipeline.null_seeds_for("religion") == default  # no config: check_inputs stops it

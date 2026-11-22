@@ -11,6 +11,13 @@
 #   nonprotective risktaking selfcentered straightlaced stuckup triggerhappy welleducated wellread
 #   wellrounded wellspoken) and rare but real words (cluttery postdoctorals toolman unartistic
 #   unattentive unempathetic unperceptive untraumatic wackjobs).
+# null_seeds: ~3,200 pairs (3x gender) make each null fit slow; with the memory cap (~77-82
+#   workers) 100 seeds would take ~10 h per run. 20 seeds (decided 2026-11-22), as for race:
+#   the smallest p is 1/21 = 0.048, so p < 0.05 and nothing stronger; CIs and gaps come from
+#   the bootstrap and are unaffected. Gender, the headline result, keeps the full 100 seeds.
+#   The report caption states the seeds per bias type.
+
+null_seeds: 20
 
 exclude_items:
   74433bbf007abaf18854138a4b8c092e: >-
