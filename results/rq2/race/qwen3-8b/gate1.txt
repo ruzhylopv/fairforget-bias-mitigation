@@ -1,0 +1,12 @@
+[x] checks 1-2 run (GPU: single vs saved, shared prefix)
+      ran with --gpu
+[x] 5 files
+      74 files, (7780, 4096), dtype ['float16']; ell <= 0 (0 exactly 0)
+[x] 4 positions agree
+      6460 one-position rows identical (2 multi-token, first difference mid-word) and 1320 two-position rows different at all 37 layers
+[x] 3 layer 0
+      first_diff: 1847 token ids, largest groups [['Ġpoor', 328], ['Ġrich', 209], ['Ġblack', 89]]; last_subtok: 1852 token ids, largest groups [['Ġpoor', 328], ['Ġrich', 208], ['Ġblack', 88]]
+[x] 1 single vs saved
+      20 rows (8 multi-token) + 0 known overruns, all 37 layers, both positions: worst cos 1.000000, worst rel 2.37e-08, worst |d ell| 0.0000
+[x] 2 shared prefix
+      10 pairs, all 37 layers, every prefix position: within tolerance (worst rel 1.46e-04); float32 worst rel 3.75e-06

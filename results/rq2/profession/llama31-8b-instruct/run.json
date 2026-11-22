@@ -1,0 +1,459 @@
+{
+  "model": "llama31-8b-instruct",
+  "bias": "profession",
+  "steps": {
+    "meta": {
+      "date": "2026-11-21T22:13:57",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047815",
+      "pairs_csv": "results/tokenization-check-nov17/pairs.csv",
+      "n_rows": 6402,
+      "excluded_items": {
+        "74433bbf007abaf18854138a4b8c092e": "\"arent\" / \"are\": one word is a prefix of the other; the first differing token lies after \"are\" (qwen3 positions fail)",
+        "cfa77b8ee198f1501f1765e71e2cbea3": "blank filled with run-together sentences (\"pilotsaregoodlooking\" / \"uglypeoplecanbepilots\")",
+        "8b2666d4ba531509fd429faeb9abb432": "anti-stereotype is a run-together sentence (\"anyracecanplaythepiano\")",
+        "d8e285baca73c7c65fffc08e47bd6ec8": "blank filled twice with a phrase (\"poor but poor\" / \"pensionersworkhardfortheirpension but ...\")",
+        "fd6c42d097f93951026241c3d0442014": "blank filled with run-together sentences (\"extremelyrich\" / \"physicistisnotahighlypayingjob\")",
+        "156819c8bbf846ec0166464d5130a352": "blank filled with run-together sentences (\"plumberslooklikesupermario\" / \"notallpumbersaremario\")",
+        "d64c83851c8ae0442679f3a5a395767a": "blank filled twice with a phrase (\"verypoor and says verypoor\" / \"performingartistcanmakealotofmoney ...\")"
+      },
+      "dropped_no_context": [],
+      "dropped_diff_outside_word": []
+    },
+    "extract": {
+      "model": "llama31-8b-instruct",
+      "model_path": "/e/project1/e-dev-2026d09-075/fairforget/models/Llama-3.1-8B-Instruct/0e9e39f249a16976918f6564b8830bc894c89659",
+      "model_dtype": "torch.bfloat16",
+      "store_dtype": "float16",
+      "n_rows": 6402,
+      "n_hidden_states": 33,
+      "hidden_size": 4096,
+      "bias": "profession",
+      "batch_size": 1,
+      "limit": null,
+      "meta_source": "/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/results/rq2-probing/profession/llama31-8b-instruct/meta.csv",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "torch": "2.9.1+cu128",
+      "transformers": "5.19.0",
+      "python": "3.13.5",
+      "gpu": "NVIDIA GH200 120GB",
+      "date": "2026-11-21T22:18:56",
+      "slurm_job_id": "3047815",
+      "seconds_forward": 249.3,
+      "seconds_total": 264.7,
+      "padding_max_rel_diff": 0.0,
+      "n_decode_mismatches": 1,
+      "decode_mismatches": [
+        {
+          "row": 2282,
+          "word": "wise",
+          "decoded": "wisely"
+        }
+      ],
+      "examples": [
+        {
+          "row": 0,
+          "word": "rhyme",
+          "tokens": [
+            "Ġrhyme"
+          ],
+          "decoded": "rhyme"
+        },
+        {
+          "row": 1,
+          "word": "rap",
+          "tokens": [
+            "Ġrap"
+          ],
+          "decoded": "rap"
+        },
+        {
+          "row": 102,
+          "word": "dirty",
+          "tokens": [
+            "Ġdirty"
+          ],
+          "decoded": "dirty"
+        },
+        {
+          "row": 103,
+          "word": "clean",
+          "tokens": [
+            "Ġclean"
+          ],
+          "decoded": "clean"
+        },
+        {
+          "row": 208,
+          "word": "protective",
+          "tokens": [
+            "Ġprotective"
+          ],
+          "decoded": "protective"
+        }
+      ],
+      "max_abs": {
+        "first_diff": [
+          0.10986328125,
+          0.59765625,
+          0.53125,
+          1.234375,
+          1.4765625,
+          2.40625,
+          2.84375,
+          3.28125,
+          4.1875,
+          4.6875,
+          5.1875,
+          4.875,
+          5.3125,
+          7.5625,
+          6.375,
+          7.1875,
+          8.8125,
+          9.4375,
+          8.875,
+          9.375,
+          9.8125,
+          9.5,
+          11.625,
+          14.25,
+          17.875,
+          20.75,
+          23.625,
+          26.75,
+          30.0,
+          32.0,
+          35.5,
+          32.0,
+          45.25
+        ],
+        "last_subtok": [
+          0.10986328125,
+          0.59765625,
+          0.53125,
+          1.234375,
+          1.4765625,
+          2.40625,
+          2.84375,
+          3.28125,
+          4.1875,
+          4.6875,
+          5.28125,
+          4.875,
+          5.3125,
+          7.5625,
+          6.375,
+          7.1875,
+          8.8125,
+          9.75,
+          8.875,
+          9.375,
+          9.8125,
+          9.5,
+          11.625,
+          14.25,
+          18.125,
+          21.0,
+          23.75,
+          27.375,
+          31.125,
+          33.25,
+          36.0,
+          32.0,
+          46.75
+        ]
+      },
+      "ell_mean_stereo": -8.938017115653288,
+      "ell_mean_anti": -10.334906725837305,
+      "ell_min": -30.541927337646484,
+      "ell_max": -0.07274089753627777,
+      "ss_attribute_word": 0.6444860980943455,
+      "n_pairs_tied": 13
+    },
+    "check_extraction": {
+      "date": "2026-11-21T22:19:15",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047815",
+      "gpu": true,
+      "seed": 0,
+      "ok": true,
+      "checks": {
+        "5 files": "PASS",
+        "4 positions agree": "PASS",
+        "3 layer 0": "PASS",
+        "1 single vs saved": "PASS",
+        "2 shared prefix": "PASS"
+      }
+    },
+    "probe": {
+      "model": "llama31-8b-instruct",
+      "bias": "profession",
+      "n_rows": 6402,
+      "positions": [
+        "first_diff",
+        "last_subtok"
+      ],
+      "layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ],
+      "n_layers": 32,
+      "grid": [
+        0.0001,
+        0.001,
+        0.01,
+        0.1,
+        1.0
+      ],
+      "inner_scoring": "neg_log_loss",
+      "baseline_C": 10000.0,
+      "n_jobs": 66,
+      "seconds_total": 612.4,
+      "date": "2026-11-21T22:29:30",
+      "git_commit": "eeccbda49506c2e294a4f756df1370a8a405e733",
+      "slurm_job_id": "3047815",
+      "summary": "/e/project1/e-dev-2026d09-075/fairforget-bias-mitigation/bias-mitigation-ruzhylo1/results/rq2/profession/llama31-8b-instruct/summary.csv"
+    },
+    "pipeline quick": {
+      "date": "2026-11-22T11:18:50",
+      "git_commit": "f9c9f29f1a2ff1c627d1c4cc6c42e9c5341e1aaf",
+      "slurm_job_id": "3054528",
+      "steps": {
+        "meta": "skipped: meta.csv exists",
+        "extract": "skipped: 66 layer files (33 hidden states), ell filled",
+        "gate 1": "skipped: gate1.txt all PASS",
+        "probe": "skipped: 66 probes and the ell baseline, summary.csv",
+        "null (quick)": "ran (25.8 min)",
+        "cgrid": "ran (0.5 min)",
+        "stats": "ran (0.1 min)"
+      },
+      "result": "ok"
+    },
+    "controls null": {
+      "date": "2026-11-22T11:18:14",
+      "git_commit": "f9c9f29f1a2ff1c627d1c4cc6c42e9c5341e1aaf",
+      "slurm_job_id": "3054528",
+      "positions": [
+        "last_subtok"
+      ],
+      "layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ],
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "controls cgrid": {
+      "date": "2026-11-22T11:18:45",
+      "git_commit": "f9c9f29f1a2ff1c627d1c4cc6c42e9c5341e1aaf",
+      "slurm_job_id": "3054528",
+      "probes": [
+        [
+          "first_diff",
+          0
+        ],
+        [
+          "first_diff",
+          1
+        ],
+        [
+          "last_subtok",
+          0
+        ]
+      ],
+      "grid": [
+        1e-06,
+        1e-05,
+        0.0001,
+        0.001
+      ]
+    },
+    "controls stats": {
+      "date": "2026-11-22T11:18:50",
+      "git_commit": "f9c9f29f1a2ff1c627d1c4cc6c42e9c5341e1aaf",
+      "slurm_job_id": "3054528",
+      "positions": [
+        "first_diff",
+        "last_subtok"
+      ],
+      "layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ],
+      "n_pairs": 3201,
+      "n_targets": 120,
+      "n_boot": 2000,
+      "boot_seed": 0,
+      "null_seeds_B": 5,
+      "misspelled": [
+        "alcholism",
+        "analitical",
+        "annalitical",
+        "apethetic",
+        "articulant",
+        "artististic",
+        "bespecaled",
+        "bussinessmen",
+        "careing",
+        "chartiable",
+        "compationate",
+        "compentent",
+        "competetive",
+        "curropt",
+        "curteous",
+        "devouted",
+        "diciplined",
+        "disingenuine",
+        "dozey",
+        "efficently",
+        "elogant",
+        "enoble",
+        "fastitious",
+        "flambouyant",
+        "gental",
+        "gentlemenly",
+        "hardworkign",
+        "intellegant",
+        "jarbled",
+        "knowledable",
+        "lazey",
+        "mathmatical",
+        "mathmatician",
+        "meak",
+        "measley",
+        "meticuolous",
+        "obediant",
+        "omniscent",
+        "perserverent",
+        "pety",
+        "philosphical",
+        "professsional",
+        "queit",
+        "sanctimonius",
+        "sgnificant",
+        "sympethetic",
+        "tempramental",
+        "unedcuated",
+        "unimaginitive",
+        "unsophicated",
+        "validictorian",
+        "vauge",
+        "weatlhy",
+        "whistful"
+      ],
+      "n_layers": 32,
+      "fixed_depth": {
+        "layer": 20,
+        "n_layers": 48,
+        "position": "last_subtok",
+        "chosen_on": {
+          "model": "lapa-12b-instruct",
+          "bias": "gender"
+        },
+        "date": "2026-11-21",
+        "rule": "Middle of the lapa/gender plateau in WP5 (last_subtok, layers 15-26 of 48, pairwise accuracy 0.84-0.87 throughout; midpoint 20.5, rounded down). Not the peak layer (22 for pairwise, 20 for per-sentence accuracy).",
+        "rel_depth": 0.4166666666666667,
+        "layer_this_run": 13
+      }
+    }
+  }
+}
