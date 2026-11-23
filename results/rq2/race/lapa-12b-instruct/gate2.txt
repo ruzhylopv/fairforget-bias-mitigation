@@ -1,5 +1,5 @@
-[x] null mean over seeds within 0.50 +- 0.03, every probe (5 seeds)
-      acc: largest |mean - 0.5| 0.004 (last_subtok 48); single runs 0.483-0.521, 0/245 outside the band, SD 0.009 vs binomial 0.006; acc_pair: largest |mean - 0.5| 0.006 (last_subtok 48); single runs 0.468-0.533, 2/245 outside the band, SD 0.013 vs binomial 0.008
+[x] null mean over seeds within 0.50 +- 0.03, every probe (20 seeds)
+      acc: largest |mean - 0.5| 0.003 (last_subtok 48); single runs 0.478-0.521, 0/980 outside the band, SD 0.008 vs binomial 0.006; acc_pair: largest |mean - 0.5| 0.004 (last_subtok 0); single runs 0.468-0.533, 2/980 outside the band, SD 0.011 vs binomial 0.008
 [x] every outer fold 50/50; no target in train and test
       S=1/S=0 per fold [(790, 790), (788, 788), (770, 770), (790, 790), (790, 790)]; targets in >1 fold: 0; tests/test_probing_probe.py::test_outer_folds_never_share_a_target_and_keep_pairs_together
 [x] groups reach the inner CV
@@ -10,17 +10,17 @@
       no probe chose the smallest C
 
 fixed depth 0.417 = layer 20 of 48, last_subtok (fixed 2026-11-21 on lapa-12b-instruct/gender)
-  acc_pair: 0.881 [0.866, 0.895], gap vs ell +0.287 [+0.264, +0.310], gap vs layer 0 +0.066 [+0.052, +0.081], p 0.167 (B 5)
-  acc: 0.835 [0.821, 0.850], gap vs ell +0.289 [+0.270, +0.307], gap vs layer 0 +0.065 [+0.054, +0.076], p 0.167 (B 5)
+  acc_pair: 0.881 [0.866, 0.895], gap vs ell +0.287 [+0.264, +0.310], gap vs layer 0 +0.066 [+0.052, +0.081], p 0.048 (B 20)
+  acc: 0.835 [0.821, 0.850], gap vs ell +0.289 [+0.270, +0.307], gap vs layer 0 +0.065 [+0.054, +0.076], p 0.048 (B 20)
 acc_pair: baseline_ell 0.593 [0.576, 0.610]; without misspellings 0.593 (+0.0003)
   first_diff layer 0 (lexical): 0.813 [0.791, 0.834]
   peak first_diff layer 21: 0.875 [0.860, 0.890], gap vs ell +0.282 [+0.259, +0.305], gap vs layer 0 +0.062 [+0.048, +0.078]; without misspellings 0.877 (+0.0014)
   last_subtok layer 0 (lexical): 0.815 [0.793, 0.836]
-  peak last_subtok layer 21: 0.885 [0.871, 0.900], gap vs ell +0.292 [+0.270, +0.314], gap vs layer 0 +0.071 [+0.056, +0.086], p 0.167, p_corr 0.167 (B 5); without misspellings 0.885 (+0.0001)
+  peak last_subtok layer 21: 0.885 [0.871, 0.900], gap vs ell +0.292 [+0.270, +0.314], gap vs layer 0 +0.071 [+0.056, +0.086], p 0.048, p_corr 0.048 (B 20); without misspellings 0.885 (+0.0001)
     null range over all layers and seeds: 0.468-0.533
 acc: baseline_ell 0.547 [0.536, 0.557]; without misspellings 0.547 (+0.0000)
   first_diff layer 0 (lexical): 0.774 [0.754, 0.793]
   peak first_diff layer 22: 0.825 [0.811, 0.840], gap vs ell +0.279 [+0.260, +0.297], gap vs layer 0 +0.052 [+0.040, +0.064]; without misspellings 0.827 (+0.0020)
   last_subtok layer 0 (lexical): 0.770 [0.752, 0.789]
-  peak last_subtok layer 20: 0.835 [0.821, 0.850], gap vs ell +0.289 [+0.270, +0.307], gap vs layer 0 +0.065 [+0.054, +0.076], p 0.167, p_corr 0.167 (B 5); without misspellings 0.836 (+0.0006)
-    null range over all layers and seeds: 0.483-0.521
+  peak last_subtok layer 20: 0.835 [0.821, 0.850], gap vs ell +0.289 [+0.270, +0.307], gap vs layer 0 +0.065 [+0.054, +0.076], p 0.048, p_corr 0.048 (B 20); without misspellings 0.836 (+0.0006)
+    null range over all layers and seeds: 0.478-0.521

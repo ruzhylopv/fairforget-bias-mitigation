@@ -311,9 +311,9 @@
       "result": "ok"
     },
     "controls null": {
-      "date": "2026-11-22T11:06:54",
-      "git_commit": "f9c9f29f1a2ff1c627d1c4cc6c42e9c5341e1aaf",
-      "slurm_job_id": "3054513",
+      "date": "2026-11-22T16:58:19",
+      "git_commit": "8ab768be53a9bfb55e04591ed015138ea93162ac",
+      "slurm_job_id": "3054521",
       "positions": [
         "last_subtok"
       ],
@@ -361,7 +361,22 @@
         1,
         2,
         3,
-        4
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
       ]
     },
     "controls cgrid": {
@@ -398,9 +413,9 @@
       ]
     },
     "controls stats": {
-      "date": "2026-11-22T11:07:31",
-      "git_commit": "f9c9f29f1a2ff1c627d1c4cc6c42e9c5341e1aaf",
-      "slurm_job_id": "3054513",
+      "date": "2026-11-22T23:06:53",
+      "git_commit": "8ab768be53a9bfb55e04591ed015138ea93162ac",
+      "slurm_job_id": "3054524",
       "positions": [
         "first_diff",
         "last_subtok"
@@ -448,7 +463,7 @@
       "n_targets": 120,
       "n_boot": 2000,
       "boot_seed": 0,
-      "null_seeds_B": 5,
+      "null_seeds_B": 20,
       "misspelled": [
         "alcholism",
         "analitical",
@@ -519,6 +534,16 @@
         "rel_depth": 0.4166666666666667,
         "layer_this_run": 15
       }
+    },
+    "pipeline null": {
+      "date": "2026-11-22T23:06:53",
+      "git_commit": "8ab768be53a9bfb55e04591ed015138ea93162ac",
+      "slurm_job_id": "3054524",
+      "steps": {
+        "null": "skipped: seeds 0-19 complete for all 37 probes",
+        "stats": "ran (0.1 min)"
+      },
+      "result": "ok"
     }
   }
 }
